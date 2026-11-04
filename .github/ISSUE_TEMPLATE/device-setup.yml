@@ -1,0 +1,70 @@
+name: Share a device setup
+description: You set up a controller, tablet, pad or other device in CUT. Share it so it can work out of the box for everyone.
+title: "Device setup: "
+labels: ["device setup"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing! Setups people share can become built-in, like the Wacom Intuos Pro pad, so the next person with the same device doesn't have to learn it.
+
+        Your setup files are in `~/.config/cut/devices/`. Each device has its own `.txt` file.
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Make and model, as exactly as you can.
+      placeholder: "Pioneer DDJ-400, Wacom Intuos Pro M, 8BitDo SN30 Pro..."
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of device is it?
+      options:
+        - MIDI DJ controller
+        - Other MIDI controller (pads, knobs)
+        - Drawing tablet pad (ExpressKeys, ring)
+        - Touch surface (touchpad, tablet touch, touchscreen)
+        - Gamepad or joystick
+        - Dial, knob or wheel (e.g. Surface Dial, PowerMate)
+        - Keyboard, macro pad or foot pedal
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: file
+    attributes:
+      label: The setup file
+      description: Paste the whole file from ~/.config/cut/devices/ for this device.
+      render: text
+      placeholder: |
+        id=...
+        name=...
+        scratch=...
+        fader=...
+    validations:
+      required: true
+  - type: textarea
+    id: layout
+    attributes:
+      label: Which physical control does what?
+      description: "In your own words, e.g. \"the left jog wheel scratches, the pads under it are fader cuts, PLAY is motor\". This lets others check it's laid out sensibly."
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: How well does it work?
+      description: Anything that felt off, like scratch sensitivity, a control that didn't learn properly, or needing to calibrate.
+  - type: input
+    id: version
+    attributes:
+      label: CUT version
+      description: Bottom right of CUT's status bar, or `cut-deck --version`.
+      placeholder: "0.3.4"
+  - type: input
+    id: distro
+    attributes:
+      label: Linux distro
+      placeholder: "Arch, Ubuntu 24.04, Fedora 41..."

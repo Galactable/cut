@@ -30,3 +30,15 @@ git push
 git push origin "v$V"
 gh release create "v$V" --title "CUT $V" --notes "$NOTES" --latest
 echo "released: https://github.com/Galactable/cut/releases/tag/v$V"
+echo "   (the ready-made download is built by GitHub and attached in a few minutes)"
+
+# The AUR package follows the release, once its clone is set up (packaging/aur/README.md).
+if [[ -d "${AUR_REPO:-$HOME/aur/cut-deck}/.git" ]]; then
+    echo "== updating the AUR package"
+    packaging/aur/update.sh "$V"
+    git add packaging/aur
+    if ! git diff --cached --quiet; then
+        git commit -m "AUR: cut-deck $V"
+        git push
+    fi
+fi

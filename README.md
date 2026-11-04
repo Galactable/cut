@@ -6,17 +6,43 @@ It's modelled on a real turntable: your hand controls the record's position, the
 
 ## Install
 
-CUT runs on Linux with an X11 desktop (see [Running on other Linux systems](#running-on-other-linux-systems)). Build it from source:
+CUT runs on Linux with an X11 desktop (see [Running on other Linux systems](#running-on-other-linux-systems)). Pick one of three ways:
+
+### Option 1: ready-made download (easiest)
+
+1. From the [latest release](https://github.com/Galactable/cut/releases/latest), download `cut-<version>-linux-x86_64.tar.gz`.
+2. Extract it and install it from a terminal:
+
+```bash
+tar xzf cut-*-linux-x86_64.tar.gz
+cd cut-*-linux-x86_64
+./install-desktop.sh   # puts CUT in ~/.local/bin and in your app launcher
+./input-access.sh      # lets CUT read touchpads, tablets and gamepads directly (asks for your password)
+```
+
+You can delete the download folder afterwards. It runs on current Ubuntu, Debian, Fedora, Arch and their relatives on x86_64. The dialogs need `zenity` and the touchpad features need `xinput`; most desktops have both, and otherwise they're one package-manager command away.
+
+To update, download the new release and run `./install-desktop.sh` again. `./install-desktop.sh --remove` uninstalls it.
+
+### Option 2: Arch, CachyOS, Manjaro (AUR)
+
+```bash
+yay -S cut-deck    # or paru -S cut-deck, or any AUR helper
+```
+
+The package includes touchpad and tablet access, so there's no `input-access.sh` step. It updates with the rest of your system.
+
+### Option 3: build from source
 
 **1. Install the build tools and libraries**
 
 ```bash
 # Arch, CachyOS, Manjaro
-sudo pacman -S --needed base-devel git alsa-lib zenity xorg-xinput
+sudo pacman -S --needed base-devel git curl alsa-lib zenity xorg-xinput
 # Debian, Ubuntu, Mint, Pop!_OS
-sudo apt install build-essential git pkg-config libasound2-dev zenity xinput
+sudo apt install build-essential git curl pkg-config libasound2-dev zenity xinput
 # Fedora
-sudo dnf install gcc git pkgconf-pkg-config alsa-lib-devel zenity xinput
+sudo dnf install gcc git curl pkgconf-pkg-config alsa-lib-devel zenity xinput
 ```
 
 **2. Install Rust** (skip this if you already have it)
@@ -40,7 +66,7 @@ cargo build --release
 ./input-access.sh      # lets CUT read touchpads, tablets and gamepads directly (asks for your password)
 ```
 
-Audio files keep opening in your usual player; CUT shows up under "Open with". `./install-desktop.sh --remove` takes CUT out of the launcher again. Re-run it if you move the folder.
+`./install-desktop.sh --remove` takes CUT out of the launcher again. Re-run it if you move the folder.
 
 **Update** to the newest version later:
 
@@ -48,13 +74,20 @@ Audio files keep opening in your usual player; CUT shows up under "Open with". `
 cd cut && git pull && cargo build --release
 ```
 
+These steps are checked automatically on fresh Ubuntu, Fedora and Arch systems every time CUT changes.
+
+Whichever way you install, audio files keep opening in your usual player, and CUT shows up under "Open with".
+
 ## Run
 
+Start CUT from your app launcher, or from a terminal:
+
 ```bash
-./target/release/cut-deck "path/to/sample.wav"
+cut-deck "path/to/sample.wav"                   # installed (download or AUR)
+./target/release/cut-deck "path/to/sample.wav"  # built from source, in the cut folder
 ```
 
-Or start it from your app launcher. You can also start it with no file and drop a file onto the window, or press **O**.
+You can also start it with no file and drop a file onto the window, or press **O**.
 
 ## Quick start: scratch a sample over a beat
 
@@ -108,7 +141,7 @@ The whole touch surface is scratch area whatever size the window is; CUT reads t
 
 ## Laptop touchpad
 
-One-time setup from the `cut` folder, so CUT can see your fingers directly (asks for your sudo password):
+One-time setup from the `cut` folder (or the extracted download), so CUT can see your fingers directly (asks for your sudo password). The AUR package already includes it:
 
 ```bash
 ./input-access.sh
@@ -187,6 +220,11 @@ CUT runs on any Linux desktop with X11. On Wayland it runs through XWayland (mos
 ## Latency
 
 Use wired headphones or the laptop speakers. Bluetooth headphones add 150 ms or more, which makes tight scratching impossible. The app asks PipeWire for a 128-sample buffer (about 3 ms).
+
+## Share your setup, report a problem
+
+- **Set up a controller, tablet or other device?** [Share its setup](https://github.com/Galactable/cut/issues/new?template=device-setup.yml). The form asks for the file from `~/.config/cut/devices/` and which control does what. Shared setups can become built-in, so the next person with that device doesn't have to learn it.
+- **Something not working?** [Report it](https://github.com/Galactable/cut/issues/new?template=bug-report.yml). Starting CUT from a terminal and pasting what it prints helps a lot.
 
 ## License
 

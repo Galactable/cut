@@ -1,0 +1,54 @@
+# Builds the ready-made download for each release and attaches it.
+# Built on an older Ubuntu so the program runs on most current Linux distros
+# (a binary only runs where the system C library is at least as new as where it was built).
+name: Release download
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build, e.g. v0.3.4"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-22.04
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Build tools and ALSA headers
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libasound2-dev
+
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Build and test
+        run: |
+          cargo build --release --locked
+          cargo test --release --locked
+
+      - name: Package
+        run: |
+          V="${TAG#v}"
+          NAME="cut-${V}-linux-x86_64"
+          mkdir "$NAME"
+          cp target/release/cut-deck "$NAME/"
+          strip "$NAME/cut-deck"
+          cp install-desktop.sh input-access.sh tablet-setup.sh README.md CHANGELOG.md LICENSE "$NAME/"
+          tar czf "$NAME.tar.gz" "$NAME"
+          sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
+          echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber

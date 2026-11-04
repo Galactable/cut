@@ -1,5 +1,12 @@
 # What's new in CUT
 
+## 0.3.4
+- Ready-made download: each release now has a `cut-<version>-linux-x86_64.tar.gz` that runs on current Ubuntu, Debian, Fedora, Arch and their relatives. Extract it and run `./install-desktop.sh`, with no building needed.
+- On Arch, CachyOS and Manjaro, CUT is on the AUR as `cut-deck`, with touchpad and tablet access included.
+- Share a device setup or report a problem from the issue forms on GitHub. Shared setups can become built-in for everyone with that device.
+- The source install steps in the README are checked automatically on fresh Ubuntu, Fedora and Arch systems. `curl` was missing from the package list; it's added.
+- `install-desktop.sh` works on a brand-new account that has no settings folder yet.
+
 ## 0.3.3
 - Choosing a section on the top waveform is smoother. Dragging towards either end while zoomed in scrolls the waveform, and the start of your selection stays put while it does.
 - On the touchpad, the top waveform never grabs the record: a click-and-drag there (with a thumb or second finger) selects instead of scratching or freezing the pointer.

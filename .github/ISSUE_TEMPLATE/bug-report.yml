@@ -1,0 +1,61 @@
+name: Something's not working
+description: CUT crashed, sounds wrong, a control misbehaves, or it won't install.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can it be made to happen again?
+      placeholder: |
+        1. Load a sample
+        2. Press ...
+        3. ...
+  - type: dropdown
+    id: input
+    attributes:
+      label: What were you scratching with?
+      multiple: true
+      options:
+        - Laptop touchpad
+        - Tablet touch surface
+        - Mouse
+        - MIDI controller
+        - Other device set up under X
+        - Not scratching / not relevant
+  - type: input
+    id: version
+    attributes:
+      label: CUT version
+      description: Bottom right of CUT's status bar, or `cut-deck --version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: installed
+    attributes:
+      label: How did you install CUT?
+      options:
+        - Ready-made download from Releases
+        - AUR (cut-deck)
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Linux distro and desktop
+      placeholder: "Ubuntu 24.04 with GNOME on X11, Arch with i3..."
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Terminal output
+      description: Start CUT from a terminal with `cut-deck` (or `./target/release/cut-deck`), make the problem happen, and paste what it printed.
+      render: text

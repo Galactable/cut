@@ -1,0 +1,103 @@
+# Follows the README's install steps on brand-new Ubuntu, Fedora and Arch systems, so the
+# instructions are known to work. The package commands are read from the README itself:
+# if they go wrong there, this fails.
+name: Install check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  from-source:
+    name: README install on ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Ubuntu
+            image: ubuntu:24.04
+            pm: apt
+          - distro: Fedora
+            image: fedora:latest
+            pm: dnf
+          - distro: Arch
+            image: archlinux:latest
+            pm: pacman
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Step 1: the README's package command"
+        run: |
+          case "${{ matrix.pm }}" in
+            apt)    cmd=$(grep -m1 '^sudo apt install' README.md); apt-get update ;;
+            dnf)    cmd=$(grep -m1 '^sudo dnf install' README.md) ;;
+            pacman) cmd=$(grep -m1 '^sudo pacman -S' README.md); pacman -Syu --noconfirm ;;
+          esac
+          [ -n "$cmd" ] || { echo "README has no ${{ matrix.pm }} command"; exit 1; }
+          echo "README says: $cmd"
+          # Containers run as root with no sudo, and nobody is there to answer prompts.
+          cmd=${cmd#sudo }
+          case "${{ matrix.pm }}" in
+            apt)    DEBIAN_FRONTEND=noninteractive $cmd -y ;;
+            dnf)    $cmd -y ;;
+            pacman) $cmd --noconfirm ;;
+          esac
+
+      - name: "Step 2: Rust, the README's way"
+        run: |
+          cmd=$(grep -m1 'sh.rustup.rs' README.md)
+          echo "README says: $cmd"
+          bash -c "$cmd -s -- -y --profile minimal"
+
+      - name: "Step 3: build"
+        run: |
+          . "$HOME/.cargo/env"
+          cargo build --release --locked
+          ./target/release/cut-deck --version
+
+      - name: Tests
+        run: |
+          . "$HOME/.cargo/env"
+          cargo test --release --locked
+
+  download-runs:
+    # The ready-made download is built on Ubuntu 22.04; check it starts on other distros.
+    name: Ready-made build starts on ${{ matrix.image }}
+    needs: build-download
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:12
+            alsa: apt-get update && apt-get install -y libasound2
+          - image: fedora:latest
+            alsa: dnf install -y alsa-lib
+          - image: archlinux:latest
+            alsa: pacman -Sy --noconfirm alsa-lib
+          - image: ubuntu:22.04
+            alsa: apt-get update && apt-get install -y libasound2
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cut-deck
+      - run: ${{ matrix.alsa }}
+      - run: chmod +x cut-deck && ./cut-deck --version
+
+  build-download:
+    name: Build like the release download
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libasound2-dev
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - run: cargo build --release --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cut-deck
+          path: target/release/cut-deck
