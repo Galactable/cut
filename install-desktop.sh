@@ -25,7 +25,9 @@ if [[ "${1:-}" == "--remove" ]]; then
 fi
 
 if [[ ! -x "$BIN" ]]; then
-    (cd "$HERE" && cargo +stable build --release)
+    # rustup takes "+stable"; a distro-packaged cargo doesn't.
+    if command -v rustup >/dev/null; then TC=+stable; else TC=; fi
+    (cd "$HERE" && cargo $TC build --release)
 fi
 
 for s in $SIZES; do

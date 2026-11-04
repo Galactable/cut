@@ -1,23 +1,60 @@
 # CUT
 
-Scratch a sample with your fingers on a laptop touchpad or a Wacom tablet's touch surface, then record the takes for your DAW.
+A vinyl scratch deck for Linux. Load a sample, then scratch it with your fingers on a laptop touchpad, a drawing tablet's touch surface, a MIDI DJ controller's jog wheel, or nearly any other input device. Record your takes as WAV or MP3 to drop into your DAW.
+
+It's modelled on a real turntable: your hand controls the record's position, the platter spins on a slipmat, and the sound goes through a modelled cartridge and phono stage.
+
+## Install
+
+CUT runs on Linux with an X11 desktop (see [Running on other Linux systems](#running-on-other-linux-systems)). Build it from source:
+
+**1. Install the build tools and libraries**
+
+```bash
+# Arch, CachyOS, Manjaro
+sudo pacman -S --needed base-devel git alsa-lib zenity xorg-xinput
+# Debian, Ubuntu, Mint, Pop!_OS
+sudo apt install build-essential git pkg-config libasound2-dev zenity xinput
+# Fedora
+sudo dnf install gcc git pkgconf-pkg-config alsa-lib-devel zenity xinput
+```
+
+**2. Install Rust** (skip this if you already have it)
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+**3. Download and build CUT**
+
+```bash
+git clone https://github.com/Galactable/cut.git
+cd cut
+cargo build --release
+```
+
+**4. Optional extras**
+
+```bash
+./install-desktop.sh   # adds CUT to your app launcher, with its icon
+./input-access.sh      # lets CUT read touchpads, tablets and gamepads directly (asks for your password)
+```
+
+`./install-desktop.sh --remove` takes CUT out of the launcher again. Re-run it if you move the folder.
+
+**Update** to the newest version later:
+
+```bash
+cd cut && git pull && cargo build --release
+```
 
 ## Run
 
 ```bash
-cd ~/Projects/cut && cargo +stable build --release
 ./target/release/cut-deck "path/to/sample.wav"
 ```
 
-You can also start it with no file and drop a file onto the window or press **O**.
-
-To add CUT to your app launcher (rofi drun, `$mod+d`) with its icon:
-
-```bash
-~/Projects/cut/install-desktop.sh
-```
-
-`--remove` takes it out again. Re-run it if you move the project folder.
+Or start it from your app launcher. You can also start it with no file and drop a file onto the window, or press **O**.
 
 ## What makes it sound like vinyl
 
@@ -45,7 +82,7 @@ Press **X** (or Devices in the menu bar) to see every input device CUT can use, 
 The ExpressKeys and touch ring work as soon as the tablet is plugged in. The pad comes set up with the layout below, and you can change it under **X**. `tablet-setup.sh` still works if you prefer the desktop to handle the keys:
 
 ```bash
-~/Projects/cut/tablet-setup.sh
+./tablet-setup.sh
 ```
 
 - **One fingertip** on the tablet's touch surface is your hand on the record. While CUT is focused the desktop ignores the touch surface, so it's scratch-only; switch away or quit and it's a normal touch surface again. Quick taps work for stops and skips.
@@ -59,10 +96,10 @@ Press **F11** for fullscreen, so the whole tablet surface is scratch area. **TAB
 
 ## Laptop touchpad
 
-One-time setup, so CUT can see your fingers directly (asks for your sudo password):
+One-time setup from the `cut` folder, so CUT can see your fingers directly (asks for your sudo password):
 
 ```bash
-~/Projects/cut/input-access.sh
+./input-access.sh
 ```
 
 This only gives read access to touchpads, tablets, tablet pads and gamepads. Keyboards and mice stay root-only.

@@ -2713,7 +2713,7 @@ fn main() -> anyhow::Result<()> {
     let found_note = if !found.is_empty() {
         format!("direct input: {}", found.join(", "))
     } else if denied > 0 {
-        "no access to touchpad/tablet devices - run ~/Projects/cut/input-access.sh for 2-finger holds".to_string()
+        "no access to touchpad/tablet devices - run input-access.sh from the cut folder for 2-finger holds".to_string()
     } else {
         String::new()
     };
