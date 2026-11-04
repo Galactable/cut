@@ -17,6 +17,9 @@ use std::{
 const SEND_EVENTS: &str = "libinput Send Events Mode Enabled";
 const TAPPING: &str = "libinput Tapping Enabled";
 
+/// Run when CUT is killed (Ctrl+C, SIGTERM), before it exits: closes an open take.
+pub static EXIT_HOOK: Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>> = Mutex::new(None);
+
 /// Commands that put the desktop back the way we found it, for the panic hook.
 static RESTORE: Mutex<Vec<Vec<String>>> = Mutex::new(Vec::new());
 
@@ -90,6 +93,9 @@ impl Desk {
         // Being killed (Ctrl+C, SIGTERM) skips destructors, so restore from a handler too.
         let _ = ctrlc::set_handler(|| {
             restore_all();
+            if let Some(hook) = EXIT_HOOK.lock().ok().and_then(|h| h.clone()) {
+                hook();
+            }
             std::process::exit(0);
         });
         let prev = std::panic::take_hook();

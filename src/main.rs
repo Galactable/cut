@@ -78,6 +78,13 @@ const MENUS: &[(&str, &[(&str, KeyCode, &str)])] = &[
         ("BPM down", KeyCode::Digit9, "9"),
         ("BPM up", KeyCode::Digit0, "0"),
     ]),
+    ("BACKING", &[
+        ("Load backing track...", KeyCode::KeyY, "Y"),
+        ("Play / pause", KeyCode::KeyB, "B"),
+        ("Volume down", KeyCode::Digit5, "5"),
+        ("Volume up", KeyCode::Digit6, "6"),
+        ("Record it into takes", KeyCode::KeyU, "U"),
+    ]),
     ("VIEW", &[("Key guide", KeyCode::KeyH, "H"), ("Fullscreen", KeyCode::F11, "F11"), ("What's new", KeyCode::F1, "F1")]),
 ];
 
@@ -113,7 +120,7 @@ const SCROLL_PX: f64 = 40.0;
 const SCROLL_HOLD: Duration = Duration::from_millis(140);
 
 /// Which guide groups go in which column (indexes into GUIDE), left to right.
-const GUIDE_COLUMNS: &[&[usize]] = &[&[0, 4], &[2, 3], &[1, 5, 6]];
+const GUIDE_COLUMNS: &[&[usize]] = &[&[0, 4, 6], &[2, 3], &[1, 5, 7]];
 
 /// The key guide, by group. Headings carry a Nerd Font icon.
 const GUIDE: &[(&str, &str, &[(&str, &str)])] = &[
@@ -141,6 +148,7 @@ const GUIDE: &[(&str, &str, &[(&str, &str)])] = &[
     ]),
     ("\u{f130}", "TAKES", &[("R", "record take"), ("E", "WAV / MP3"), ("T", "click on/off"), ("9 0", "BPM (Ctrl = 10)")]),
     ("\u{f028}", "SOUND", &[("V", "vinyl EQ"), ("N", "surface noise")]),
+    ("\u{f001}", "BACKING", &[("Y", "load track"), ("B", "play / pause"), ("5 6", "its volume"), ("U", "into takes")]),
     ("\u{f108}", "APP", &[("Alt / F10", "menu bar"), ("H", "hide keys"), ("P", "profiles"), ("F", "folders"), ("X", "devices"), ("F11", "fullscreen"), ("Ctrl+Q", "quit")]),
 ];
 
@@ -385,6 +393,16 @@ struct App {
     whats_new: Option<WhatsNew>,
     /// Where the version badge was drawn, for clicks.
     version_box: (i32, i32, i32, i32),
+
+    /// A track that plays under the record. The previous one is kept a while so the
+    /// audio thread never frees it.
+    backing: Option<Arc<Source>>,
+    backing_prev: Option<Arc<Source>>,
+    backing_path: Option<PathBuf>,
+    backing_on: bool,
+    backing_vol: f32,
+    backing_in_take: bool,
+    backing_rx: Option<mpsc::Receiver<Option<(PathBuf, Result<Source, String>)>>>,
 }
 
 impl App {
@@ -421,11 +439,14 @@ impl App {
     fn save_settings(&self) {
         let mut text = self.settings_text();
         text.push_str(&format!(
-            "samples_dir={}\ntakes_dir={}\nformat={}\nversion_seen={}\n",
+            "samples_dir={}\ntakes_dir={}\nformat={}\nversion_seen={}\nbacking={}\nbacking_volume={}\nbacking_in_takes={}\n",
             self.samples_dir.display(),
             self.takes_dir.lock().unwrap().display(),
             if self.save_mp3.load(Relaxed) { "mp3" } else { "wav" },
-            self.version_seen
+            self.version_seen,
+            self.backing_path.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
+            self.backing_vol,
+            self.backing_in_take
         ));
         if let Some(p) = &self.profile {
             text.push_str(&format!("profile={p}\nprofile_changed={}\n", self.profile_dirty));
@@ -450,6 +471,9 @@ impl App {
                 Some(("samples_dir", v)) if !v.trim().is_empty() => self.samples_dir = PathBuf::from(v.trim()),
                 Some(("format", v)) => self.save_mp3.store(v.trim() == "mp3", Relaxed),
                 Some(("version_seen", v)) => self.version_seen = v.trim().to_string(),
+                Some(("backing", v)) if !v.trim().is_empty() => self.backing_path = Some(PathBuf::from(v.trim())),
+                Some(("backing_volume", v)) => self.backing_vol = v.trim().parse::<f32>().unwrap_or(0.7).clamp(0.0, 1.5),
+                Some(("backing_in_takes", v)) => self.backing_in_take = v.trim() == "true",
                 Some(("takes_dir", v)) if !v.trim().is_empty() => *self.takes_dir.lock().unwrap() = PathBuf::from(v.trim()),
                 _ => {}
             }
@@ -814,6 +838,13 @@ impl App {
             KeyCode::KeyN => on(self.noise),
             KeyCode::KeyH => on(self.show_guide),
             KeyCode::KeyT => on(self.click),
+            KeyCode::KeyB => Some(match &self.backing {
+                Some(_) if self.backing_on => ("playing".into(), GREEN),
+                Some(_) => ("paused".into(), WHITE),
+                None => ("none loaded".into(), DIM),
+            }),
+            KeyCode::KeyU => on(self.backing_in_take),
+            KeyCode::Digit5 | KeyCode::Digit6 => Some((format!("{:.0}%", self.backing_vol * 100.0), WHITE)),
             KeyCode::F11 => on(self.window.as_ref().is_some_and(|w| w.fullscreen().is_some())),
             KeyCode::Digit3 if !self.rpm45 => Some(("\u{f00c}".into(), GREEN)),
             KeyCode::Digit4 if self.rpm45 => Some(("\u{f00c}".into(), GREEN)),
@@ -1537,6 +1568,25 @@ impl App {
             KeyCode::KeyH => self.show_guide = !self.show_guide,
             KeyCode::KeyF => self.open_folder_menu(),
             KeyCode::KeyX => self.open_dev_menu(),
+            KeyCode::KeyY => self.backing_dialog(),
+            KeyCode::KeyB => {
+                if self.backing.is_none() {
+                    self.backing_dialog();
+                } else {
+                    self.backing_on = !self.backing_on;
+                    self.send(Msg::BackingPlay(self.backing_on));
+                }
+            }
+            KeyCode::Digit5 | KeyCode::Digit6 => {
+                let d = if code == KeyCode::Digit6 { 0.05 } else { -0.05 };
+                self.backing_vol = (self.backing_vol + d).clamp(0.0, 1.5);
+                self.send(Msg::BackingVolume(self.backing_vol));
+            }
+            KeyCode::KeyU => {
+                self.backing_in_take = !self.backing_in_take;
+                self.send(Msg::BackingInTake(self.backing_in_take));
+                self.say(if self.backing_in_take { "takes record the full mix: scratch + backing track" } else { "takes record the scratch alone" });
+            }
             KeyCode::F1 => self.open_whats_new(),
             KeyCode::KeyZ => self.toggle_zoom(),
             KeyCode::KeyE => {
@@ -1663,6 +1713,61 @@ impl App {
             let path = out.ok().filter(|o| o.status.success()).map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
             let _ = tx.send(path);
         });
+    }
+
+    /// Y: choose a backing track. It loads in the background (long tracks take a moment).
+    fn backing_dialog(&mut self) {
+        let (tx, rx) = mpsc::channel();
+        self.backing_rx = Some(rx);
+        let start = match self.backing_path.as_deref().and_then(Path::parent) {
+            Some(d) => d.to_path_buf(),
+            None => self.samples_dir.clone(),
+        };
+        std::thread::spawn(move || {
+            let out = std::process::Command::new("zenity")
+                .args([
+                    "--file-selection",
+                    "--title=Load a backing track",
+                    &format!("--filename={}/", start.display()),
+                    "--file-filter=Audio | *.wav *.WAV *.mp3 *.flac *.ogg *.aif *.aiff *.m4a",
+                    "--file-filter=All files | *",
+                ])
+                .output();
+            let path = out.ok().filter(|o| o.status.success()).map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
+            let _ = tx.send(path.map(|p| {
+                let src = deck::load(&p).map_err(|e| format!("{e:#}"));
+                (p, src)
+            }));
+        });
+    }
+
+    /// Loads the last backing track at start-up, paused.
+    fn reload_backing(&mut self) {
+        let Some(p) = self.backing_path.clone().filter(|p| p.is_file()) else { return };
+        let (tx, rx) = mpsc::channel();
+        self.backing_rx = Some(rx);
+        std::thread::spawn(move || {
+            let src = deck::load(&p).map_err(|e| format!("{e:#}"));
+            let _ = tx.send(Some((p, src)));
+        });
+    }
+
+    fn backing_loaded(&mut self, path: PathBuf, src: Result<Source, String>) {
+        match src {
+            Ok(src) => {
+                let name = src.name.clone();
+                let arc = Arc::new(src);
+                self.send(Msg::Backing(Some(arc.clone())));
+                self.send(Msg::BackingVolume(self.backing_vol));
+                self.send(Msg::BackingInTake(self.backing_in_take));
+                self.backing_prev = self.backing.replace(arc);
+                self.backing_path = Some(path);
+                self.say(format!("backing track: {name} - B to play. It restarts with each take"));
+                self.save_settings();
+            }
+            Err(e) => self.say(format!("couldn't load backing track: {e}")),
+        }
+        self.dirty = true;
     }
 
     /// Everything on screen that changes without input: needle position, level meter,
@@ -1814,6 +1919,11 @@ impl App {
         left.push((vec![lab("MOTOR"), if self.motor { val("ON", GREEN) } else { val("OFF", DIM) }], 9));
         left.push((vec![val(if self.rpm45 { "45" } else { "33" }, LILAC), lab("rpm")], 3));
         left.push((vec![lab("FADER"), if self.fader_open { val("OPEN", GREEN) } else { val("CUT", WHITE) }], 8));
+        left.push((vec![lab("VOL"), val(&format!("{:.0}%", self.volume * 100.0), WHITE)], 6));
+        if self.backing.is_some() {
+            let state = if self.backing_on { val(&format!("\u{f04b} {:.0}%", self.backing_vol * 100.0), GREEN) } else { val("paused", DIM) };
+            left.push((vec![lab("BACKING"), state], 4));
+        }
         if self.click {
             left.push((vec![lab("CLICK"), val(&format!("{:.0}", self.bpm), LILAC)], 4));
         }
@@ -2312,6 +2422,10 @@ impl ApplicationHandler<InEvent> for App {
             // A touch surface set up to work as the other kind is read as that kind.
             InEvent::Down { dev, kind, t, x, y, fingers } => {
                 self.moved = true;
+                // Touch surfaces light up in the Devices list too.
+                if self.dev_flash(&dev) {
+                    self.dirty = true;
+                }
                 let kind = self.touch_kind(&dev, kind);
                 self.direct_event(InEvent::Down { dev, kind, t, x, y, fingers });
             }
@@ -2352,6 +2466,14 @@ impl ApplicationHandler<InEvent> for App {
                 }
             }
         }
+        if let Some(rx) = &self.backing_rx {
+            if let Ok(res) = rx.try_recv() {
+                self.backing_rx = None;
+                if let Some((p, src)) = res {
+                    self.backing_loaded(p, src);
+                }
+            }
+        }
         if let Some(rx) = &self.save_rx {
             if let Ok(res) = rx.try_recv() {
                 self.save_rx = None;
@@ -2359,6 +2481,10 @@ impl ApplicationHandler<InEvent> for App {
                     self.save_section(&name, &folder, &new_folder);
                 }
             }
+        }
+        // Keep redrawing while a device row is lit up, so the highlight goes away on time.
+        if self.dev_menu.as_ref().is_some_and(|m| m.flash.as_ref().is_some_and(|(_, t)| t.elapsed() < Duration::from_millis(1000))) {
+            self.dirty = true;
         }
         // Draw only when something changed, at most ~60 times a second. When nothing is
         // moving, check back less often (input wakes us straight away anyway).
@@ -2700,6 +2826,13 @@ fn main() -> anyhow::Result<()> {
         version_seen: String::new(),
         whats_new: None,
         version_box: (0, 0, 0, 0),
+        backing: None,
+        backing_prev: None,
+        backing_path: None,
+        backing_on: false,
+        backing_vol: 0.7,
+        backing_in_take: false,
+        backing_rx: None,
     };
     // Settings used to live in ~/.config/scratchdeck (the app's old name).
     let new_dir = App::settings_path().parent().map(Path::to_path_buf);
@@ -2710,6 +2843,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
     app.load_settings();
+    app.reload_backing();
     let found_note = if !found.is_empty() {
         format!("direct input: {}", found.join(", "))
     } else if denied > 0 {
@@ -2721,6 +2855,13 @@ fn main() -> anyhow::Result<()> {
         eprintln!("{found_note}");
         app.say(found_note);
     }
-    el.run_app(&mut app)?;
+    // Killed or closed mid-take: finish the take file before exiting.
+    let closing = app.shared.clone();
+    *desk::EXIT_HOOK.lock().unwrap() = Some(Arc::new(move || closing.close_take()));
+    let closing = app.shared.clone();
+    let res = el.run_app(&mut app);
+    closing.close_take();
+    drop(app);
+    res?;
     Ok(())
 }

@@ -203,6 +203,7 @@ pub const ACTIONS: &[(&str, &str, Action)] = &[
     ("cue", "Back to cue", Action::Cmd(KeyCode::KeyC)),
     ("record", "Record take", Action::Cmd(KeyCode::KeyR)),
     ("click", "Click on/off", Action::Cmd(KeyCode::KeyT)),
+    ("backing", "Backing track play/pause", Action::Cmd(KeyCode::KeyB)),
     ("volume", "Volume (ring, knob or slider)", Action::Volume),
     ("vol_up", "Volume up", Action::Cmd(KeyCode::ArrowUp)),
     ("vol_down", "Volume down", Action::Cmd(KeyCode::ArrowDown)),
@@ -222,8 +223,13 @@ pub const ACTIONS: &[(&str, &str, Action)] = &[
     ("fullscreen", "Fullscreen", Action::Cmd(KeyCode::F11)),
 ];
 
-/// The actions the guided setup asks for, in order (indexes into ACTIONS).
-pub const GUIDED: &[usize] = &[0, 1, 2, 3, 4, 6];
+/// The actions the guided setup asks for, in order.
+pub const GUIDED: &[&str] = &["fader", "hold", "motor", "cue", "record", "volume"];
+
+/// Index into ACTIONS of an action's file key.
+pub fn action(key: &str) -> usize {
+    ACTIONS.iter().position(|(k, _, _)| *k == key).unwrap_or_else(|| panic!("no action {key}"))
+}
 
 /// How a touch surface behaves.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -363,7 +369,7 @@ pub fn builtin(id: &str, name: &str) -> Option<DevProfile> {
     if n.contains("wacom") && n.ends_with("pad") {
         let mut p = DevProfile::new(id, name);
         let key = |c: u16| Bound { ctl: Ctl::Key(c), enc: Enc::Button };
-        let act = |k: &str| ACTIONS.iter().position(|(a, _, _)| *a == k).unwrap();
+        let act = action;
         for c in 0x100..=0x103 {
             p.binds.push((act("fader"), key(c)));
         }

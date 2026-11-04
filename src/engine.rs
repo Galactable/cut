@@ -7,7 +7,7 @@ use std::sync::{
 
 use rtrb::{Consumer, Producer};
 
-use crate::deck::Record;
+use crate::deck::{Record, Source};
 use crate::dsp::{riaa_play, Biquad, Sinc, MAX_STRETCH};
 
 pub enum Msg {
@@ -25,6 +25,13 @@ pub enum Msg {
     Smooth(f64),
     Metronome(bool),
     Bpm(f64),
+    /// The backing track (None to remove it). The UI keeps its own clone of the track,
+    /// so dropping the old one here never frees memory on the audio thread.
+    Backing(Option<Arc<Source>>),
+    BackingPlay(bool),
+    BackingVolume(f32),
+    /// Put the backing track into takes too (off: takes are the scratch alone).
+    BackingInTake(bool),
 }
 
 #[derive(Default)]
@@ -37,6 +44,20 @@ pub struct Shared {
     /// Whether the engine is actually writing take audio.
     pub recording: AtomicBool,
     pub rec_frames: AtomicU64,
+    /// The app is closing: the recorder finishes any take and sets `rec_closed`.
+    pub quitting: AtomicBool,
+    pub rec_closed: AtomicBool,
+}
+
+impl Shared {
+    /// Closes an open take cleanly before the app exits (waits at most a couple of seconds).
+    pub fn close_take(&self) {
+        self.quitting.store(true, Relaxed);
+        let t0 = std::time::Instant::now();
+        while !self.rec_closed.load(Relaxed) && t0.elapsed() < std::time::Duration::from_secs(3) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
 }
 
 impl Shared {
@@ -96,6 +117,13 @@ pub struct Engine {
     click_hz: f32,
     recording: bool,
     rec_frames: u64,
+
+    backing: Option<Arc<Source>>,
+    backing_on: bool,
+    backing_vol: f32,
+    backing_in_take: bool,
+    /// Position in the backing track's own samples, and its samples per output sample.
+    backing_pos: f64,
 }
 
 impl Engine {
@@ -144,6 +172,11 @@ impl Engine {
             click_ph: 0.0,
             click_hz: 1500.0,
             recording: false,
+            backing: None,
+            backing_on: false,
+            backing_vol: 0.7,
+            backing_in_take: false,
+            backing_pos: 0.0,
             rec_frames: 0,
         }
     }
@@ -219,6 +252,13 @@ impl Engine {
                 self.beat = u64::MAX;
             }
             Msg::Bpm(b) => self.bpm = b,
+            Msg::Backing(b) => {
+                self.backing = b;
+                self.backing_pos = 0.0;
+            }
+            Msg::BackingPlay(on) => self.backing_on = on,
+            Msg::BackingVolume(v) => self.backing_vol = v,
+            Msg::BackingInTake(on) => self.backing_in_take = on,
         }
     }
 
@@ -257,6 +297,8 @@ impl Engine {
                 self.recording = true;
                 self.rec_frames = 0;
                 self.shared.recording.store(true, Relaxed);
+                // The backing track starts over with the take, so both begin at 0:00.
+                self.backing_pos = 0.0;
             }
 
             let tau = if platter_target.abs() > self.platter.abs() { START_TAU } else { STOP_TAU };
@@ -327,17 +369,36 @@ impl Engine {
                 click = (self.click_ph * std::f32::consts::TAU).sin() * self.click_env;
                 self.click_env *= click_decay;
             }
-            frame[0] = ol + click;
+            // The backing track: under the record, not through its fader. It loops.
+            let (mut bl, mut br) = (0.0, 0.0);
+            if let (Some(b), true) = (&self.backing, self.backing_on) {
+                let n = b.l.len();
+                if n > 1 {
+                    let i = self.backing_pos as usize % n;
+                    let j = (i + 1) % n;
+                    let f = self.backing_pos.fract() as f32;
+                    bl = (b.l[i] + (b.l[j] - b.l[i]) * f) * self.backing_vol;
+                    br = (b.r[i] + (b.r[j] - b.r[i]) * f) * self.backing_vol;
+                    self.backing_pos += b.rate as f64 * dt;
+                    if self.backing_pos >= n as f64 {
+                        self.backing_pos -= n as f64;
+                    }
+                }
+            }
+            // Without a backing track the scratch passes untouched (it's already limited).
+            let (ml, mr) = if self.backing_on && self.backing.is_some() { (soft_clip(ol + bl), soft_clip(or + br)) } else { (ol, or) };
+            frame[0] = ml + click;
             if ch > 1 {
-                frame[1] = or + click;
+                frame[1] = mr + click;
             }
             for x in frame.iter_mut().skip(2) {
                 *x = 0.0;
             }
-            peak = peak.max(ol.abs()).max(or.abs());
+            peak = peak.max(ml.abs()).max(mr.abs());
             if self.recording && self.take.slots() >= 2 {
-                let _ = self.take.push(ol);
-                let _ = self.take.push(or);
+                let (tl, tr) = if self.backing_in_take { (ml, mr) } else { (ol, or) };
+                let _ = self.take.push(tl);
+                let _ = self.take.push(tr);
                 self.rec_frames += 1;
             }
         }
@@ -460,4 +521,64 @@ pub fn render_test(input: Option<&str>, out_path: &str) -> anyhow::Result<()> {
     w.finalize()?;
     println!("wrote {out_path}");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A silent record with the motor off, plus a backing track that's a constant 0.5.
+    fn setup() -> (Engine, rtrb::Producer<Msg>, rtrb::Consumer<f32>, Arc<Shared>) {
+        let src = Source::silent();
+        let rec = Arc::new(crate::deck::build(&src, 0, src.len(), true, false, false));
+        let (tx, rx) = rtrb::RingBuffer::new(64);
+        let (trash_tx, _trash_rx) = rtrb::RingBuffer::new(8);
+        let (take_tx, take_rx) = rtrb::RingBuffer::new(48000 * 2);
+        let shared = Arc::new(Shared::default());
+        let eng = Engine::new(rec, 48000.0, rx, trash_tx, shared.clone(), take_tx);
+        (eng, tx, take_rx, shared)
+    }
+
+    fn backing() -> Arc<Source> {
+        Arc::new(Source { l: vec![0.5; 48000], r: vec![0.5; 48000], rate: 48000, name: "beat".into() })
+    }
+
+    #[test]
+    fn backing_is_heard_but_kept_out_of_takes_unless_asked() {
+        let (mut eng, mut tx, mut take, shared) = setup();
+        let _ = tx.push(Msg::Backing(Some(backing())));
+        let _ = tx.push(Msg::BackingPlay(true));
+        let _ = tx.push(Msg::BackingVolume(1.0));
+        shared.rec_request.store(true, Relaxed);
+        let mut out = vec![0.0f32; 512 * 2];
+        eng.process(&mut out, 2);
+        assert!(out.iter().all(|&x| (x - 0.5).abs() < 1e-3), "backing should be heard");
+        assert!(shared.recording.load(Relaxed));
+        let mut n = 0;
+        while let Ok(x) = take.pop() {
+            assert!(x.abs() < 1e-6, "take should be the (silent) scratch alone");
+            n += 1;
+        }
+        assert_eq!(n, 512 * 2);
+
+        let _ = tx.push(Msg::BackingInTake(true));
+        eng.process(&mut out, 2);
+        while let Ok(x) = take.pop() {
+            assert!((x - 0.5).abs() < 1e-3, "with U on, the take is the full mix");
+        }
+    }
+
+    #[test]
+    fn backing_restarts_when_a_take_starts() {
+        let (mut eng, mut tx, _take, shared) = setup();
+        let _ = tx.push(Msg::Backing(Some(backing())));
+        let _ = tx.push(Msg::BackingPlay(true));
+        let mut out = vec![0.0f32; 1000 * 2];
+        eng.process(&mut out, 2);
+        assert!(eng.backing_pos > 900.0);
+        shared.rec_request.store(true, Relaxed);
+        let mut out = vec![0.0f32; 2];
+        eng.process(&mut out, 2);
+        assert!(eng.backing_pos < 2.0, "take start puts the backing track back to 0:00");
+    }
 }

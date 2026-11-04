@@ -1,5 +1,13 @@
 # What's new in CUT
 
+## 0.3.0
+- Backing track: press Y to load a beat or song that plays under the record, with its own volume (5 and 6) and B to play or pause. It loops, and it restarts from the top whenever a take starts recording, so your take lines up with it at 0:00 in your DAW.
+- Takes are the scratch alone by default, ready to drop over the beat. Press U to record the full mix with the backing track instead.
+- Takes survive crashes: the file is saved as you record, so if CUT is closed, killed or crashes mid-take you keep everything up to the last half second. Quitting while recording finishes the take properly.
+- Volume shows in the status bar.
+- Wacom touch ring: lifting your finger and putting it down elsewhere no longer jumps the volume.
+- Devices menu: touch surfaces light up in the list when touched, like other devices.
+
 ## 0.2.0
 - Devices menu (X): CUT now finds input devices as you plug them in, including MIDI DJ controllers, gamepads, dials, foot pedals and tablet pads. Touch any control and its device lights up in the list.
 - Guided setup: move what you want to scratch with, then press the buttons for the crossfader, hold, motor, cue and record. Every control runs exactly what its key does.

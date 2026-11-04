@@ -88,8 +88,8 @@ The ExpressKeys and touch ring work as soon as the tablet is plugged in. The pad
 - **One fingertip** on the tablet's touch surface is your hand on the record. While CUT is focused the desktop ignores the touch surface, so it's scratch-only; switch away or quit and it's a normal touch surface again. Quick taps work for stops and skips.
 - A grab holds until every finger lifts, so a finger skipping off mid-stroke doesn't let go.
 - Keep the pen off the tablet: the tablet ignores touch while a pen is near it. CUT doesn't use the pen.
-- The top 4 ExpressKeys are the crossfader: any of them held cuts the sound. **I** flips this to hamster mode, where held opens it. 
-- The remaining ExpressKeys are motor, back to cue, record take, hold record and click. The touch ring is volume.
+- The top 3 ExpressKeys and the button in the middle of the touch ring are the crossfader: any of them held cuts the sound. **I** flips this to hamster mode, where held opens it.
+- The 4th key is motor, and the 4 keys below the ring are back to cue, record take, hold record and click. The touch ring is volume. Change any of it under **X**.
 - To undo the tablet setup: `./tablet-setup.sh --reset`.
 
 Press **F11** for fullscreen, so the whole tablet surface is scratch area. **TAB** switches between left/right, up/down and circular platter motion.
@@ -130,7 +130,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 - The section normally sits on the record with 1 s of blank groove before it (so you can pull back past the start) and 3 s after. **G** makes it loop seamlessly instead, with no gaps.
 - **S** saves the section (clean) to `<samples folder>/<Folder>/` (default `~/Music/CUT`).
 - **,** and **.** step to the previous and next sample in the same folder.
-- **R** starts or stops a take of CUT's own output (after the fader and volume; never the click or other apps), saved to the takes folder (default `~/Music/CUT/Takes`, 32-bit float WAV).
+- **R** starts or stops a take of CUT's own output (after the fader and volume; never the click or other apps), saved to the takes folder (default `~/Music/CUT/Takes`, 32-bit float WAV). The file is saved as you go, so a crash or a forced quit mid-take keeps everything up to the last half second.
 - **T** turns on the click, and **9** / **0** change the BPM (hold Ctrl for steps of 10). With the click on, a take starts on the next bar, so it lines up when you drop it at a bar in FL. The click is never recorded.
 
 ## Version and what's new
@@ -144,6 +144,15 @@ CUT runs on any Linux desktop with X11. On Wayland it runs through XWayland (mos
 - **Sound:** CUT uses PipeWire's JACK support, or a JACK server, when one is running. Otherwise it plays through ALSA, which also covers PulseAudio systems through ALSA's pulse plugin. The only library it needs is `libasound` (alsa-lib), which every desktop distro installs. JACK is loaded only if it's there.
 - **Needed for parts of the app:** `zenity` (open and save dialogs), `xinput` (touchpad handling), `pkexec` with a polkit agent (giving access from the Devices menu; otherwise it prints the `sudo` command to run), and `xsetwacom` (only for `tablet-setup.sh`).
 - **Building:** Rust (rustup), a C compiler, and the ALSA headers: `alsa-lib` on Arch/CachyOS, `libasound2-dev` on Debian/Ubuntu, `alsa-lib-devel` on Fedora.
+
+## Backing track
+
+Load a beat or a whole song to scratch over. It plays under the record, unaffected by the crossfader.
+
+- **Y** loads a backing track and **B** plays or pauses it. **5** and **6** set its volume, separately from the record's.
+- It loops, and when a take starts recording it jumps back to its start at the same moment. In your DAW, drop the take at the same point as the beat and they line up. With the click on, both start on the next bar.
+- Takes record the scratch alone by default. **U** switches to recording the full mix with the backing track.
+- CUT remembers the last backing track and loads it (paused) next time.
 
 ## Latency
 

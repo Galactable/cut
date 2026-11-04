@@ -127,6 +127,19 @@ fn delta(enc: Enc, v: i32, prev: Option<i32>, (lo, hi): (i32, i32)) -> f64 {
     }
 }
 
+/// Units a bound control moved. A tablet's touch ring reports its lowest value when the
+/// finger lifts, so going to or from it is never a turn (positions are 1-71, 0 = lifted).
+fn turned(b: Bound, v: i32, prev: Option<i32>, range: (i32, i32)) -> f64 {
+    if b.enc == Enc::Wrap && matches!(b.ctl, Ctl::Abs(_)) {
+        if v == range.0 || prev == Some(range.0) {
+            return 0.0;
+        }
+        // The positions themselves start one above it.
+        return delta(b.enc, v, prev, (range.0 + 1, range.1));
+    }
+    delta(b.enc, v, prev, range)
+}
+
 /// Control units in one turn of the record, when not calibrated.
 fn default_per_turn(enc: Enc, (lo, hi): (i32, i32)) -> f64 {
     match enc {
@@ -344,17 +357,7 @@ impl App {
                 Stage::List => {
                     // Touch something to find it in the list.
                     let real = ctl.is_button() && value > 0 || !ctl.is_button() && prev.is_some_and(|p| p != value);
-                    if real {
-                        m.flash = Some((inst.clone(), Instant::now()));
-                        let list = self.dev_list();
-                        if let Some(i) = list.iter().position(|d| *d == inst) {
-                            if let Some(m) = self.dev_menu.as_mut() {
-                                m.sel = i;
-                            }
-                        }
-                        return true;
-                    }
-                    return false;
+                    return real && self.dev_flash(&inst);
                 }
                 _ => {}
             }
@@ -370,7 +373,7 @@ impl App {
         let mut did = false;
 
         if let Some(b) = scratch {
-            let d = delta(b.enc, value, prev, range);
+            let d = turned(b, value, prev, range);
             if d != 0.0 && live {
                 let turns = d / per_turn.unwrap_or(default_per_turn(b.enc, range)) * sens * if rev { -1.0 } else { 1.0 };
                 self.sens_kind = Kind::Controller;
@@ -417,7 +420,7 @@ impl App {
                         // 20 steps of 5% to a full turn.
                         let step = default_per_turn(enc, range) / 20.0;
                         let acc = self.vol_acc.entry(key.clone()).or_insert(0.0);
-                        *acc += delta(enc, value, prev, range);
+                        *acc += turned(b, value, prev, range);
                         let n = (*acc / step).trunc();
                         *acc -= n * step;
                         let code = if n > 0.0 { KeyCode::ArrowUp } else { KeyCode::ArrowDown };
@@ -441,6 +444,21 @@ impl App {
             self.dev_pressed.remove(&key);
         }
         did
+    }
+
+    /// Something on this device was touched while the list is open: pick it out.
+    pub fn dev_flash(&mut self, inst: &Arc<str>) -> bool {
+        if !matches!(self.dev_menu, Some(DevMenu { stage: Stage::List, .. })) {
+            return false;
+        }
+        let list = self.dev_list();
+        if let Some(m) = self.dev_menu.as_mut() {
+            m.flash = Some((inst.clone(), Instant::now()));
+            if let Some(i) = list.iter().position(|d| d == inst) {
+                m.sel = i;
+            }
+        }
+        true
     }
 
     pub fn jog_active(&self) -> bool {
@@ -606,7 +624,7 @@ impl App {
                 match row {
                     DevRow::Guided => {
                         let mut steps = vec![Step::Scratch, Step::Calibrate];
-                        steps.extend(GUIDED.iter().map(|&a| Step::Action(a)));
+                        steps.extend(GUIDED.iter().map(|&a| Step::Action(devices::action(a))));
                         self.start_learn(inst, steps, true);
                     }
                     DevRow::Scratch => self.start_learn(inst, vec![Step::Scratch, Step::Calibrate], false),
@@ -947,7 +965,7 @@ fn learn_event(l: &mut Learn, info: &DevInfo, profile: Option<&DevProfile>, ctl:
     match l.step() {
         Some(Step::Calibrate) => {
             if let Some(s) = profile.and_then(|p| p.scratch).filter(|s| s.ctl == ctl) {
-                l.turned += delta(s.enc, value, prev, range).abs();
+                l.turned += turned(s, value, prev, range).abs();
             }
         }
         Some(Step::Action(a)) => {
@@ -1015,6 +1033,18 @@ mod tests {
         assert_eq!(delta(Enc::Wrap, 1, Some(70), (0, 71)), 3.0);
         // A finger put down somewhere else isn't a turn.
         assert_eq!(delta(Enc::Wrap, 30, Some(5), (0, 71)), 0.0);
+        // Nor is lifting off a tablet ring (0) and touching it again.
+        let ring = Bound { ctl: Ctl::Abs(8), enc: Enc::Wrap };
+        assert_eq!(turned(ring, 12, Some(0), (0, 71)), 0.0);
+        assert_eq!(turned(ring, 0, Some(33), (0, 71)), 0.0);
+        assert_eq!(turned(ring, 1, Some(71), (0, 71)), 1.0);
+    }
+
+    #[test]
+    fn guided_steps_exist() {
+        for a in GUIDED {
+            devices::action(a);
+        }
     }
 
     #[test]
