@@ -291,12 +291,26 @@ impl App {
                 _ => self.focused && (learn || (used && p.is_some_and(|p| p.grab))),
             };
             info.grab.store(grab, Relaxed);
-            info.forward.store(used || menu, Relaxed);
+            // With the menu open everything is listened to (to find devices), except
+            // what the list doesn't show: a hovering pen would redraw it nonstop.
+            let shown = info.class.usual() || self.dev_menu.as_ref().is_some_and(|m| m.show_all);
+            info.forward.store(used || (menu && shown), Relaxed);
         }
     }
 
     pub fn device_added(&mut self, info: DevInfo) {
         let id = info.id.clone();
+        // Setups learned before not_a_control existed may hold such a signal: drop it.
+        if let Some(p) = self.dev_profiles.get(&id) {
+            if p.binds.iter().any(|(_, b)| not_a_control(b.ctl, &info)) || p.scratch.is_some_and(|b| not_a_control(b.ctl, &info)) {
+                let mut p = p.clone();
+                p.binds.retain(|(_, b)| !not_a_control(b.ctl, &info));
+                if p.scratch.is_some_and(|b| not_a_control(b.ctl, &info)) {
+                    p.scratch = None;
+                }
+                self.save_dev(p);
+            }
+        }
         let fresh = !self.devs.contains_key(&info.inst);
         if !self.dev_profiles.contains_key(&id) {
             if let Some(p) = devices::builtin(&id, &info.name) {
@@ -411,7 +425,8 @@ impl App {
                 }
                 Action::Volume if live => match b.enc {
                     Enc::Axis => {
-                        self.volume = norm(value, range) as f32;
+                        // The same 0-150% as the keys.
+                        self.volume = (norm(value, range) * 1.5) as f32;
                         self.send(crate::engine::Msg::Volume(self.volume));
                         self.save_settings();
                     }
@@ -598,6 +613,7 @@ impl App {
                 let Some(m) = self.dev_menu.as_mut() else { return };
                 if m.sel == list.len() {
                     m.show_all = !m.show_all;
+                    self.sync_devices();
                     return;
                 }
                 let Some(inst) = list.get(m.sel).cloned() else { return };
@@ -960,7 +976,19 @@ impl App {
 }
 
 /// One control event while learning.
+/// Signals that aren't controls: ABS_MISC, which a Wacom pad sends with every button
+/// press, and axes whose range is a single value.
+fn not_a_control(ctl: Ctl, info: &DevInfo) -> bool {
+    match ctl {
+        Ctl::Abs(c) => c == 0x28 || info.ranges.get(&c).is_some_and(|(lo, hi)| lo >= hi),
+        _ => false,
+    }
+}
+
 fn learn_event(l: &mut Learn, info: &DevInfo, profile: Option<&DevProfile>, ctl: Ctl, value: i32, prev: Option<i32>, range: (i32, i32)) {
+    if not_a_control(ctl, info) {
+        return;
+    }
     l.stats.entry(ctl).or_default().add(value, range, info.is_midi());
     match l.step() {
         Some(Step::Calibrate) => {
@@ -1038,6 +1066,28 @@ mod tests {
         assert_eq!(turned(ring, 12, Some(0), (0, 71)), 0.0);
         assert_eq!(turned(ring, 0, Some(33), (0, 71)), 0.0);
         assert_eq!(turned(ring, 1, Some(71), (0, 71)), 1.0);
+    }
+
+    #[test]
+    fn wacom_pad_activity_signal_is_not_learned() {
+        let info = DevInfo {
+            inst: "/dev/input/event10".into(),
+            id: "056a:0315 Wacom Intuos Pro M Pad".into(),
+            name: "Wacom Intuos Pro M Pad".into(),
+            class: Class::Controls,
+            readable: true,
+            vendor: 0x056a,
+            product: 0x0315,
+            ranges: [(8, (0, 71)), (40, (0, 0))].into_iter().collect(),
+            grab: Default::default(),
+            forward: Default::default(),
+        };
+        let mut l = Learn { inst: info.inst.clone(), steps: vec![Step::Action(devices::action("click"))], at: 0, stats: HashMap::new(), got: Vec::new(), turned: 0.0, guided: false };
+        // A button press arrives with ABS_MISC jumping 0 -> 15 -> 0 around it.
+        for (ctl, v) in [(Ctl::Abs(40), 15), (Ctl::Key(263), 1), (Ctl::Abs(40), 0), (Ctl::Key(263), 0)] {
+            learn_event(&mut l, &info, None, ctl, v, None, info.range(ctl));
+        }
+        assert_eq!(l.got, vec![Bound { ctl: Ctl::Key(263), enc: Enc::Button }]);
     }
 
     #[test]

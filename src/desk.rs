@@ -4,9 +4,12 @@
 //! scratch would scroll, tap or click whatever is under the cursor. So:
 //! - while you hold the record on a touchpad, X's copy of that touchpad is paused
 //!   (libinput "send events" off), and resumed when you let go;
-//! - while CUT is focused, X stops using a tablet's touch surface entirely, and
-//!   touchpad tap-to-click is off (taps are record stops here; tap-and-drag would hold
-//!   the click down for ~300 ms); both come back when you switch away or quit.
+//! - while CUT is focused, X stops using a tablet's touch surface entirely; it comes back
+//!   when you switch away or quit;
+//! - while CUT is focused and the pointer is over its window, touchpad tap-to-click is
+//!   off (taps are record stops here; tap-and-drag would hold the click down for
+//!   ~300 ms). Moving the pointer off the window brings tapping straight back, so you can
+//!   tap another window to switch to it.
 //! Everything is restored on exit, on a panic, and when killed.
 
 use std::{
@@ -35,6 +38,7 @@ pub struct Desk {
     tx: mpsc::Sender<Vec<String>>,
     paused: bool,
     taken: bool,
+    taps_off: bool,
 }
 
 impl Desk {
@@ -103,7 +107,7 @@ impl Desk {
             restore_all();
             prev(info);
         }));
-        Desk { touchpads, tappers, tablet_touch, tx, paused: false, taken: false }
+        Desk { touchpads, tappers, tablet_touch, tx, paused: false, taken: false, taps_off: false }
     }
 
     fn run(&self, args: &[&str]) {
@@ -132,8 +136,17 @@ impl Desk {
         for t in &self.tablet_touch {
             self.run(&[if take { "disable" } else { "enable" }, t]);
         }
+    }
+
+    /// Tap-to-click off while the pointer is over CUT's focused window (taps are record
+    /// stops there), back on as soon as it leaves, so a tap can still switch windows.
+    pub fn set_taps_off(&mut self, off: bool) {
+        if off == self.taps_off {
+            return;
+        }
+        self.taps_off = off;
         for t in &self.tappers {
-            self.run(&["set-prop", t, TAPPING, if take { "0" } else { "1" }]);
+            self.run(&["set-prop", t, TAPPING, if off { "0" } else { "1" }]);
         }
     }
 }

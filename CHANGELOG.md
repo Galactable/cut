@@ -1,5 +1,17 @@
 # What's new in CUT
 
+## 0.3.3
+- Choosing a section on the top waveform is smoother. Dragging towards either end while zoomed in scrolls the waveform, and the start of your selection stays put while it does.
+- On the touchpad, the top waveform never grabs the record: a click-and-drag there (with a thumb or second finger) selects instead of scratching or freezing the pointer.
+- Touchpad taps work for switching windows again. CUT only turns tap-to-click off while the pointer is over its own window, not the whole time it's focused, so tapping another window switches to it.
+- Learning a Wacom pad button no longer also picks up the pad's hidden "activity" signal. Setups that already have it are cleaned up automatically.
+- Alt opens the menu bar only when pressed and released on its own, so Alt+Tab and other Alt shortcuts don't pop it open.
+- The Devices menu no longer redraws constantly while a pen hovers over the tablet.
+- Volume goes to 150% from a knob or slider too, the same as the keys. VOL turns red above 100%, where loud peaks start getting squashed (in takes too).
+- Enter (motor) and Backspace (back to cue) are now listed in the key guide and menus.
+- Device setup files only list what you've changed, so a touchpad's file no longer carries settings it doesn't use. Older files are tidied automatically.
+- README corrections: fullscreen doesn't change the tablet's scratch area, and MIDI controllers still need their controls learned.
+
 ## 0.3.2
 - You can always see whether the backing track goes into your takes. The status bar shows BACKING with "IN TAKES" in red, or "not in takes", and while recording, REC says "scratch + backing" or "scratch only".
 - Starting a take with the backing track playing tells you which one you're recording.

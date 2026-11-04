@@ -53,10 +53,10 @@ const MENUS: &[(&str, &[(&str, KeyCode, &str)])] = &[
         ("Whole sample", KeyCode::KeyA, "A"),
         ("Zoom to section", KeyCode::KeyZ, "Z"),
         ("Loop section", KeyCode::KeyG, "G"),
-        ("Back to cue", KeyCode::KeyC, "C"),
+        ("Back to cue", KeyCode::KeyC, "C / Bksp"),
     ]),
     ("DECK", &[
-        ("Motor", KeyCode::KeyM, "M"),
+        ("Motor", KeyCode::KeyM, "M / Enter"),
         ("33 rpm", KeyCode::Digit3, "3"),
         ("45 rpm", KeyCode::Digit4, "4"),
         ("Hamster fader", KeyCode::KeyI, "I"),
@@ -135,7 +135,7 @@ const GUIDE: &[(&str, &str, &[(&str, &str)])] = &[
         ("- =", "smoothing"),
     ]),
     ("\u{f1de}", "FADER", &[("Space J K L", "cut"), ("I", "hamster mode")]),
-    ("\u{f04b}", "DECK", &[("M", "motor on/off"), ("C", "back to cue"), ("3 4", "33 / 45 rpm"), ("Up Down", "volume")]),
+    ("\u{f04b}", "DECK", &[("M / Enter", "motor on/off"), ("C / Bksp", "back to cue"), ("3 4", "33 / 45 rpm"), ("Up Down", "volume")]),
     ("\u{f0c4}", "SAMPLE", &[
         ("drag wave", "pick section"),
         ("drag edge", "trim section"),
@@ -329,7 +329,10 @@ struct App {
     scroll_last: Option<Instant>,
     hand: bool,
     hand_u: f64,
+    /// Choosing a section on the top waveform: where the drag started, in samples (so
+    /// it stays put while the view scrolls), and when the edge auto-scroll last moved.
     region_drag: Option<f64>,
+    drag_tick: Instant,
     in_status: Arc<input::Status>,
     /// Where things were drawn last frame, for hit-testing clicks and the platter centre.
     lay: Layout,
@@ -393,6 +396,10 @@ struct App {
     whats_new: Option<WhatsNew>,
     /// Where the version badge was drawn, for clicks.
     version_box: (i32, i32, i32, i32),
+    /// Alt is down and nothing else has been pressed since: releasing it opens the menu.
+    alt_alone: bool,
+    /// The pointer is over the window (touchpad taps are only taken over then).
+    pointer_inside: bool,
 
     /// A track that plays under the record. The previous one is kept a while so the
     /// audio thread never frees it.
@@ -1164,8 +1171,9 @@ impl App {
                 if !self.focused || self.overlay_open() || self.bar.open.is_some() {
                     return;
                 }
-                // Two fingers over the top waveform zoom it (as scrolling) rather than scratch.
-                if kind == Kind::Touchpad && self.over_overview() {
+                // Two fingers over the top waveform zoom it (as scrolling) rather than scratch,
+                // and fingers there during a click-and-drag are choosing a section.
+                if kind == Kind::Touchpad && (self.over_overview() || self.region_drag.is_some()) {
                     return;
                 }
                 if self.direct.is_some() {
@@ -1187,6 +1195,11 @@ impl App {
                 }
                 // One finger on the touchpad only holds the record (a tap is a quick stop);
                 // its movement is the cursor's.
+                // Moving the pointer onto the top waveform lets go of the record.
+                if kind == Kind::Touchpad && (self.over_overview() || self.region_drag.is_some()) {
+                    self.release_touchpad();
+                    return;
+                }
                 if kind == Kind::Touchpad && fingers < 2 {
                     self.direct_prev = (x, y);
                     self.direct_angle = y.atan2(x);
@@ -1214,6 +1227,11 @@ impl App {
                 self.move_hand_at(du, t);
             }
             InEvent::Anchor { kind, x, y, fingers, .. } => {
+                // A second finger (a click) over the top waveform is for the waveform.
+                if kind == Kind::Touchpad && (self.over_overview() || self.region_drag.is_some()) {
+                    self.release_touchpad();
+                    return;
+                }
                 if self.direct == Some(kind) {
                     if kind == Kind::Touchpad {
                         self.desk.pause_touchpad(fingers >= 2);
@@ -1352,6 +1370,36 @@ impl App {
         self.view = (start, start + (v1 - v0));
     }
 
+    /// Dragging a selection near or past either end of the zoomed top waveform scrolls
+    /// it that way, faster the further out the pointer is.
+    fn drag_autoscroll(&mut self) {
+        let dt = self.drag_tick.elapsed().as_secs_f64().min(0.05);
+        self.drag_tick = Instant::now();
+        if self.region_drag.is_none() || self.view.1 - self.view.0 >= self.src.len() as f64 - 1.0 {
+            return;
+        }
+        let (ox, _, ow, _) = self.lay.overview;
+        let zone = 24.0;
+        let x = self.cursor.0;
+        let (left, right) = (ox as f64 + zone, (ox + ow) as f64 - zone);
+        let over = if x < left { x - left } else if x > right { x - right } else { 0.0 };
+        if over != 0.0 {
+            // Pixels of the view per second: a slow creep at the edge, quick well past it.
+            self.pan_overview(over.signum() * (over.abs() * 25.0 + 150.0) * dt);
+            self.dirty = true;
+        }
+    }
+
+    /// The touchpad stops holding the record (until all fingers lift), e.g. when the
+    /// pointer is on the top waveform, so a click-and-drag there never scratches.
+    fn release_touchpad(&mut self) {
+        if self.direct == Some(Kind::Touchpad) {
+            self.direct = None;
+            self.desk.pause_touchpad(false);
+            self.update_hand();
+        }
+    }
+
     /// Z: zoom in on the section, or back out to the whole file.
     fn toggle_zoom(&mut self) {
         let len = self.src.len() as f64;
@@ -1367,6 +1415,8 @@ impl App {
     }
 
     fn mouse_button(&mut self, button: MouseButton, pressed: bool) {
+        // Alt+click is a window-manager move, not a request for the menu.
+        self.alt_alone = false;
         if self.whats_new.is_some() {
             if pressed && button == MouseButton::Left {
                 self.whats_new = None;
@@ -1442,20 +1492,23 @@ impl App {
                         // anywhere else starts a new selection.
                         let ex0 = self.overview_sample_to_x(self.region.0 as f64);
                         let ex1 = self.overview_sample_to_x(self.region.1 as f64);
-                        let anchor = if (x - ex0).abs() <= 6.0 {
-                            ex1
-                        } else if (x - ex1).abs() <= 6.0 {
-                            ex0
+                        let anchor = if (x - ex0).abs() <= 8.0 {
+                            self.region.1 as f64
+                        } else if (x - ex1).abs() <= 8.0 {
+                            self.region.0 as f64
                         } else {
-                            x
+                            self.overview_x_to_sample(x) as f64
                         };
                         self.region_drag = Some(anchor);
+                        self.drag_tick = Instant::now();
+                        // A touchpad finger that was holding the record lets go: this is a click.
+                        self.release_touchpad();
                         return;
                     }
                     self.mouse_scratch = true;
                     self.sens_kind = Kind::Mouse;
-                } else if let Some(x0) = self.region_drag.take() {
-                    let (a, b) = (self.overview_x_to_sample(x0), self.overview_x_to_sample(self.cursor.0));
+                } else if let Some(a0) = self.region_drag.take() {
+                    let (a, b) = (a0.round() as usize, self.overview_x_to_sample(self.cursor.0));
                     let (a, b) = (a.min(b), a.max(b));
                     if b - a > (self.src.rate as usize) / 100 {
                         self.region = (a, b);
@@ -1634,6 +1687,9 @@ impl App {
                 self.send(Msg::Rpm(45.0 / (100.0 / 3.0)));
             }
             KeyCode::ArrowUp => {
+                if self.volume <= 1.0 + 1e-3 && self.volume + 0.05 > 1.0 + 1e-3 {
+                    self.say("volume over 100%: loud peaks get squashed, in takes too");
+                }
                 self.volume = (self.volume + 0.05).min(1.5);
                 self.send(Msg::Volume(self.volume));
             }
@@ -1942,7 +1998,8 @@ impl App {
         left.push((vec![lab("MOTOR"), if self.motor { val("ON", GREEN) } else { val("OFF", DIM) }], 9));
         left.push((vec![val(if self.rpm45 { "45" } else { "33" }, LILAC), lab("rpm")], 3));
         left.push((vec![lab("FADER"), if self.fader_open { val("OPEN", GREEN) } else { val("CUT", WHITE) }], 8));
-        left.push((vec![lab("VOL"), val(&format!("{:.0}%", self.volume * 100.0), WHITE)], 6));
+        // Over 100% the limiter starts squashing loud peaks (in takes too).
+        left.push((vec![lab("VOL"), val(&format!("{:.0}%", self.volume * 100.0), if self.volume > 1.0 + 1e-3 { RED } else { WHITE })], 6));
         if self.backing.is_some() {
             let state = if self.backing_on { val(&format!("\u{f04b} {:.0}%", self.backing_vol * 100.0), GREEN) } else { val("paused", DIM) };
             // Whether takes get it too (U), so it's never a surprise afterwards.
@@ -2069,9 +2126,11 @@ impl App {
         let rx0 = to_x(self.region.0 as f64).clamp(ox - 2, ox + ow + 2);
         let rx1 = to_x(self.region.1 as f64).clamp(ox - 2, ox + ow + 2);
         c.rect(rx0, oy, (rx1 - rx0).max(1), oh, 0x24123f);
-        if let Some(x0) = self.region_drag {
-            let (a, b) = (x0.min(self.cursor.0) as i32, x0.max(self.cursor.0) as i32);
-            c.rect(a, oy, b - a, oh, 0x3a1d66);
+        if let Some(a0) = self.region_drag {
+            let x0 = to_x(a0).clamp(ox, ox + ow);
+            let x1 = (self.cursor.0 as i32).clamp(ox, ox + ow);
+            let (a, b) = (x0.min(x1), x0.max(x1));
+            c.rect(a, oy, (b - a).max(1), oh, 0x3a1d66);
         }
         let mid = oy + oh / 2;
         let amp = oh as f32 / 2.0 - 2.0;
@@ -2343,7 +2402,14 @@ impl ApplicationHandler<InEvent> for App {
         match event {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::RedrawRequested => self.draw(),
-            WindowEvent::CursorMoved { position, .. } => self.cursor_moved(position.x, position.y),
+            WindowEvent::CursorMoved { position, .. } => {
+                // Opening under the pointer may not send CursorEntered; moving counts too.
+                if !self.pointer_inside {
+                    self.pointer_inside = true;
+                    self.desk.set_taps_off(self.focused);
+                }
+                self.cursor_moved(position.x, position.y);
+            }
             WindowEvent::MouseInput { state, button, .. } => self.mouse_button(button, state == ElementState::Pressed),
             WindowEvent::MouseWheel { delta, .. } => {
                 let (dx, dy) = match delta {
@@ -2372,10 +2438,17 @@ impl ApplicationHandler<InEvent> for App {
                             if self.bar_key(code) {
                                 return;
                             }
-                            if matches!(code, KeyCode::F10 | KeyCode::AltLeft) && self.bar.open.is_none() {
+                            if code == KeyCode::F10 && self.bar.open.is_none() {
                                 self.open_bar(0);
                                 return;
                             }
+                            // Alt opens the menu only if it's released without another key,
+                            // so Alt+Tab and window-manager Alt shortcuts don't pop it open.
+                            if code == KeyCode::AltLeft && self.bar.open.is_none() {
+                                self.alt_alone = !event.repeat;
+                                return;
+                            }
+                            self.alt_alone = false;
                         }
                     }
                     if self.whats_new.is_some() {
@@ -2396,6 +2469,12 @@ impl ApplicationHandler<InEvent> for App {
                     }
                 }
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    if code == KeyCode::AltLeft && event.state == ElementState::Released {
+                        if std::mem::take(&mut self.alt_alone) && self.bar.open.is_none() && !self.overlay_open() {
+                            self.open_bar(0);
+                        }
+                        return;
+                    }
                     self.key(code, event.state == ElementState::Pressed, event.repeat);
                 }
             }
@@ -2403,11 +2482,22 @@ impl ApplicationHandler<InEvent> for App {
             WindowEvent::Focused(true) => {
                 self.focused = true;
                 self.desk.set_focused(true);
+                self.desk.set_taps_off(self.pointer_inside);
                 self.sync_devices();
+            }
+            WindowEvent::CursorEntered { .. } => {
+                self.pointer_inside = true;
+                self.desk.set_taps_off(self.focused);
+            }
+            WindowEvent::CursorLeft { .. } => {
+                self.pointer_inside = false;
+                self.desk.set_taps_off(false);
             }
             WindowEvent::Focused(false) => {
                 self.focused = false;
+                self.alt_alone = false;
                 self.desk.set_focused(false);
+                self.desk.set_taps_off(false);
                 self.desk.pause_touchpad(false);
                 self.direct = None;
                 self.fader_keys.clear();
@@ -2507,6 +2597,7 @@ impl ApplicationHandler<InEvent> for App {
                 }
             }
         }
+        self.drag_autoscroll();
         // Keep redrawing while a device row is lit up, so the highlight goes away on time.
         if self.dev_menu.as_ref().is_some_and(|m| m.flash.as_ref().is_some_and(|(_, t)| t.elapsed() < Duration::from_millis(1000))) {
             self.dirty = true;
@@ -2809,6 +2900,7 @@ fn main() -> anyhow::Result<()> {
         hand: false,
         hand_u: 0.0,
         region_drag: None,
+        drag_tick: Instant::now(),
         in_status: in_status.clone(),
         lay: layout(1280, 800),
         fonts: text::Fonts::load(),
@@ -2851,6 +2943,8 @@ fn main() -> anyhow::Result<()> {
         version_seen: String::new(),
         whats_new: None,
         version_box: (0, 0, 0, 0),
+        alt_alone: false,
+        pointer_inside: false,
         backing: None,
         backing_prev: None,
         backing_path: None,

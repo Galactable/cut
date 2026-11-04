@@ -282,7 +282,11 @@ impl DevProfile {
     }
 
     pub fn text(&self) -> String {
-        let mut s = format!("# CUT device setup. Change it from the Devices menu (X) in CUT.\nid={}\nname={}\ngrab={}\n", self.id, self.name, self.grab);
+        let mut s = format!("# CUT device setup. Change it from the Devices menu (X) in CUT.\nid={}\nname={}\n", self.id, self.name);
+        // Only what differs from the defaults: grab on, sensitivity x1, normal direction.
+        if !self.grab {
+            s.push_str("grab=false\n");
+        }
         if let Some(sf) = self.surface {
             s.push_str(&format!("surface={}\n", if sf == Surface::Tablet { "tablet" } else { "touchpad" }));
         }
@@ -292,7 +296,12 @@ impl DevProfile {
         if let Some(p) = self.per_turn {
             s.push_str(&format!("per_turn={p}\n"));
         }
-        s.push_str(&format!("sens={}\nreverse={}\n", self.sens, self.reverse));
+        if self.sens != 1.0 {
+            s.push_str(&format!("sens={}\n", self.sens));
+        }
+        if self.reverse {
+            s.push_str("reverse=true\n");
+        }
         for (i, (key, _, _)) in ACTIONS.iter().enumerate() {
             let list: Vec<String> = self.binds_for(i).map(Bound::text).collect();
             if !list.is_empty() {
@@ -340,7 +349,12 @@ pub fn load_all() -> HashMap<String, DevProfile> {
     let mut out = HashMap::new();
     if let Ok(d) = std::fs::read_dir(dir()) {
         for e in d.flatten() {
-            if let Some(p) = std::fs::read_to_string(e.path()).ok().and_then(|t| DevProfile::parse(&t)) {
+            let Ok(text) = std::fs::read_to_string(e.path()) else { continue };
+            if let Some(p) = DevProfile::parse(&text) {
+                // Files from older versions get rewritten in the current, tidier form.
+                if p.text() != text && e.path() == p.path() {
+                    let _ = std::fs::write(p.path(), p.text());
+                }
                 out.insert(p.id.clone(), p);
             }
         }

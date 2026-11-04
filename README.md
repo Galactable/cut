@@ -83,11 +83,11 @@ Press **X** (or Devices in the menu bar) to see every input device CUT can use, 
 - **Guided setup** walks you through it. First, move what you want to scratch with (a jog wheel, dial, touch ring, knob or stick) and press Enter. Then turn it exactly once around to calibrate a record turn. Then press the buttons for the crossfader, hold record (or touch a jog's top plate), motor, back to cue and record take, and set the volume control. **Tab** skips a step.
 - Every other key command can be given a control too: pick its row and press the control. **Del** clears a row.
 - **Sensitivity** (← →) and **scratch direction** are per device, on top of the controller **[ ]** setting.
-- MIDI controllers work with no setup. Relative jogs (64-centred or two's complement), absolute knobs and faders, notes and CC buttons are told apart while you learn them.
+- MIDI controllers show up without any access setup; learn their controls here like any other device. Relative jogs (64-centred or two's complement), absolute knobs and faders, notes and CC buttons are told apart while you learn them.
 - While CUT is focused it takes a set-up device from the desktop, so its buttons don't also type or click. It gives the device back when you switch away. You can turn this off per device.
 - Touch surfaces have one setting: work as a **touchpad** (two fingers scratch, one is the cursor) or a **tablet** (one finger scratches).
 - A device marked **needs access** can be unlocked from the menu (asks for your password). This writes a udev rule for that one device only, by vendor, product and name. `./input-access.sh --remove` takes all of it back.
-- Setups are plain text files in `~/.config/cut/devices/`, one per device model, so you can copy them to another machine or share one for a controller.
+- Setups are plain text files in `~/.config/cut/devices/`, one per device model, so you can copy them to another machine or share one for a controller. They only list what you've set: controls, plus `grab=false`, `sens=` or `reverse=true` if you changed those from the defaults.
 
 ## Wacom Intuos Pro
 
@@ -104,7 +104,7 @@ The ExpressKeys and touch ring work as soon as the tablet is plugged in, once CU
 - The 4th key is motor, and the 4 keys below the ring are back to cue, record take, hold record and click. The touch ring is volume. Change any of it under **X**.
 - To undo the tablet setup: `./tablet-setup.sh --reset`.
 
-Press **F11** for fullscreen, so the whole tablet surface is scratch area. **TAB** switches between left/right, up/down and circular platter motion.
+The whole touch surface is scratch area whatever size the window is; CUT reads the tablet directly. **TAB** switches between AUTO, left/right, up/down and circular platter motion.
 
 ## Laptop touchpad
 
@@ -119,6 +119,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 - Two fingers down puts your hand on the record. Move them to scratch, hold them still to hold the record, lift to let go.
 - One finger is the normal cursor. While two fingers hold the record, the desktop pauses the touchpad, so nothing scrolls or clicks outside the app.
 - Touch only scratches while the CUT window is focused.
+- Tap-to-click is off while the pointer is over CUT (a tap is a quick record stop there). Move the pointer onto another window and tapping works again, so you can tap it to switch.
 - Without the setup, two-finger scrolling still scratches, but pausing counts as letting go.
 
 ## Feel
@@ -126,12 +127,13 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 - Each input (touchpad, tablet touch, mouse, controllers) has its own sensitivity, and the touch surfaces and mouse have their own scratch motion. **[ ]** and **TAB** change the one you used last. They're saved in `~/.config/cut/settings.txt`.
 - **[** and **]** change sensitivity (shown as x1.00). Controllers share one setting, and each device has its own on top of it (see **X**). At x1.00 a quarter-second scratch is about 1.6 cm on the touchpad and 5 cm on the tablet.
 - **-** and **=** change smoothing: lower feels heavier, higher feels snappier.
+- **Up** / **Down** set the record's volume, up to 150%. VOL turns red above 100%: from there CUT's limiter squashes loud peaks, in your takes too, so keep it at 100% or below for clean takes. A knob or slider set up under **X** covers the same range.
 - **TAB** switches the scratch motion: AUTO (follows whatever line you scratch along, right/up = forward), left/right, up/down, or PLATTER (circle round the centre of the tablet, clockwise = forward, one turn = 1.8 s like a real 33). Tablet touch defaults to platter, and a dot on the on-screen record shows where your finger is.
 
 ## Start-up and view
 
-- CUT opens in full view, paused, with an empty record on the platter. Press **M** to start it: the empty run-out groove plays hiss, crackle and a scuff that ticks once per turn until you load a sample.
-- **H** shows or hides the key guide. **Alt** or **F10** opens the menu bar, where every command is also listed with its key.
+- CUT opens in full view, paused, with an empty record on the platter. Press **M** (or **Enter**) to start it: the empty run-out groove plays hiss, crackle and a scuff that ticks once per turn until you load a sample.
+- **H** shows or hides the key guide. **Alt** (pressed and released on its own) or **F10** opens the menu bar, where every command is also listed with its key.
 - **P** opens profiles: save your current feel and mixer settings under a name, and load them back later (for example one per controller or per routine).
 - **Ctrl+Q** quits. Quitting mid-take finishes the take first.
 
@@ -139,7 +141,10 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 
 - **F** opens the folders menu: choose where saved samples and takes go, browse to a folder or make a new one, and choose whether to move your existing files there. Takes kept inside the samples folder move with it.
 
+- **C** (or **Backspace**) puts the needle back on the cue, the start of the section.
 - Drag on the top waveform to choose the section that goes on the record. Grab an edge of the selection to move just that edge. **A** selects the whole file.
+- When zoomed in, drag towards either end of the waveform and it scrolls that way, faster the further out you go, so a selection can run past what's on screen.
+- On the touchpad, the top waveform is for selecting: a finger there never holds or scratches the record, so you can click and drag with two fingers or your thumb.
 - Zoom the top waveform for precise selection: scroll over it (two fingers on the touchpad, or the mouse wheel) to zoom around the pointer, scroll sideways to pan, and **Z** jumps to the section and back out. The edge times and zoom level show while zoomed.
 - The section normally sits on the record with 1 s of blank groove before it (so you can pull back past the start) and 3 s after. **G** makes it loop seamlessly instead, with no gaps.
 - **S** saves the section (clean) to `<samples folder>/<Folder>/` (default `~/Music/CUT`).
