@@ -42,7 +42,7 @@ body:
       label: How did you install CUT?
       options:
         - Ready-made download from Releases
-        - AUR (cut-deck)
+        - Arch package (makepkg or AUR)
         - Built from source
     validations:
       required: true

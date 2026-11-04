@@ -24,13 +24,17 @@ You can delete the download folder afterwards. It runs on current Ubuntu, Debian
 
 To update, download the new release and run `./install-desktop.sh` again. `./install-desktop.sh --remove` uninstalls it.
 
-### Option 2: Arch, CachyOS, Manjaro (AUR)
+### Option 2: Arch, CachyOS, Manjaro (package)
+
+Build CUT as a proper Arch package, so pacman installs and removes it cleanly:
 
 ```bash
-yay -S cut-deck    # or paru -S cut-deck, or any AUR helper
+git clone https://github.com/Galactable/cut.git
+cd cut/packaging/aur
+makepkg -si
 ```
 
-The package includes touchpad and tablet access, so there's no `input-access.sh` step. It updates with the rest of your system.
+The package includes touchpad and tablet access, so there's no `input-access.sh` step. To update later, run `git pull` in the `cut` folder, then `makepkg -si` again in `packaging/aur`. CUT is coming to the AUR as `cut-deck` (so `yay -S cut-deck` will work) once AUR sign-ups reopen.
 
 ### Option 3: build from source
 
@@ -38,11 +42,11 @@ The package includes touchpad and tablet access, so there's no `input-access.sh`
 
 ```bash
 # Arch, CachyOS, Manjaro
-sudo pacman -S --needed base-devel git curl alsa-lib zenity xorg-xinput
+sudo pacman -S --needed base-devel git curl alsa-lib jack zenity xorg-xinput
 # Debian, Ubuntu, Mint, Pop!_OS
-sudo apt install build-essential git curl pkg-config libasound2-dev zenity xinput
+sudo apt install build-essential git curl pkg-config libasound2-dev libjack-jackd2-dev zenity xinput
 # Fedora
-sudo dnf install gcc git curl pkgconf-pkg-config alsa-lib-devel zenity xinput
+sudo dnf install gcc git curl pkgconf-pkg-config alsa-lib-devel pipewire-jack-audio-connection-kit-devel zenity xinput
 ```
 
 **2. Install Rust** (skip this if you already have it)
@@ -215,7 +219,7 @@ CUT runs on any Linux desktop with X11. On Wayland it runs through XWayland (mos
 
 - **Sound:** CUT uses PipeWire's JACK support, or a JACK server, when one is running. Otherwise it plays through ALSA, which also covers PulseAudio systems through ALSA's pulse plugin. The only library it needs is `libasound` (alsa-lib), which every desktop distro installs. JACK is loaded only if it's there.
 - **Needed for parts of the app:** `zenity` (open and save dialogs), `xinput` (touchpad handling), `pkexec` with a polkit agent (giving access from the Devices menu; otherwise it prints the `sudo` command to run), and `xsetwacom` (only for `tablet-setup.sh`).
-- **Building:** Rust (rustup), a C compiler, and the ALSA headers: `alsa-lib` on Arch/CachyOS, `libasound2-dev` on Debian/Ubuntu, `alsa-lib-devel` on Fedora.
+- **Building:** Rust (rustup), a C compiler, and the ALSA and JACK development files: `alsa-lib` and `jack` (e.g. `pipewire-jack`) on Arch/CachyOS, `libasound2-dev` and `libjack-jackd2-dev` on Debian/Ubuntu, `alsa-lib-devel` and `pipewire-jack-audio-connection-kit-devel` on Fedora. JACK is only needed to build; at run time CUT uses it if it's there.
 
 ## Latency
 

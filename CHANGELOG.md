@@ -2,7 +2,7 @@
 
 ## 0.3.4
 - Ready-made download: each release now has a `cut-<version>-linux-x86_64.tar.gz` that runs on current Ubuntu, Debian, Fedora, Arch and their relatives. Extract it and run `./install-desktop.sh`, with no building needed.
-- On Arch, CachyOS and Manjaro, CUT is on the AUR as `cut-deck`, with touchpad and tablet access included.
+- On Arch, CachyOS and Manjaro, CUT can be built as a proper package (`makepkg -si` in `packaging/aur`), with touchpad and tablet access included. It's coming to the AUR as `cut-deck` once AUR sign-ups reopen.
 - Share a device setup or report a problem from the issue forms on GitHub. Shared setups can become built-in for everyone with that device.
 - The source install steps in the README are checked automatically on fresh Ubuntu, Fedora and Arch systems. `curl` was missing from the package list; it's added.
 - `install-desktop.sh` works on a brand-new account that has no settings folder yet.

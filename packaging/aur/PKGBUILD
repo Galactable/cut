@@ -1,14 +1,15 @@
 # Maintainer: Galactable
 # Kept in github.com/Galactable/cut under packaging/aur; packaging/aur/update.sh bumps it per release.
 pkgname=cut-deck
-pkgver=0.3.3
+pkgver=0.3.4
 pkgrel=1
 pkgdesc="Vinyl scratch deck: scratch samples over a backing track with a touchpad, tablet or MIDI DJ controller, and record takes"
 arch=('x86_64')
 url="https://github.com/Galactable/cut"
 license=('CC0-1.0')
 depends=('alsa-lib' 'gcc-libs' 'glibc' 'hicolor-icon-theme' 'xorg-xinput' 'zenity')
-makedepends=('cargo')
+# jack: only to build (the audio library checks for it); at run time it's optional.
+makedepends=('cargo' 'jack')
 optdepends=('pipewire-jack: lowest latency through PipeWire'
             'polkit: unlock other devices from the Devices menu'
             'xf86-input-wacom: for tablet-setup.sh')
@@ -16,7 +17,7 @@ install=cut-deck.install
 # The bundled LAME (MP3) is C; with makepkg's LTO its objects can't be linked by Rust.
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha256sums=('77854f16a7f0f03cf4c6a50e48345275bd563873185c5808caca3dfae49d9e10')
+sha256sums=('77b2b2b34b4d519d296be12d2b335cbb33e3d22ae71233fa20f6898ab865bd13')
 
 prepare() {
   cd "cut-$pkgver"
