@@ -160,8 +160,8 @@ A backing track is a beat or song that plays under the record while you scratch.
 - **It loops,** so a short loop or a long song both work.
 - **It restarts when a take starts.** The moment recording begins, the backing track jumps to its start, so every take begins at the same point in the beat. In your DAW, line the take up with the start of the beat and you're done.
 - **With the click on** (**T**), recording waits for the next bar, and the backing track restarts on that same bar. Set the click to the beat's tempo with **9** / **0** if you want to hear it count you in.
-- **Takes are the scratch alone by default,** clean for mixing. Press **U** for the full mix instead. CUT says which one is on when you press it, and the BACKING menu shows it too.
-- **The status bar** shows **BACKING** with its volume while it plays, or *paused*.
+- **Takes are the scratch alone by default,** clean for mixing. Press **U** for the full mix instead. The status bar always shows which: **IN TAKES** (red) or *not in takes* next to BACKING, and **scratch + backing** or *scratch only* next to REC while you record.
+- **The status bar** shows **BACKING** with its volume while it plays (or *paused*), and whether it's going into takes.
 - **It's remembered:** next time you open CUT, the last backing track is loaded again, paused.
 - **Put it on a controller:** under **X**, pick any device and give "Backing track play/pause" a button.
 

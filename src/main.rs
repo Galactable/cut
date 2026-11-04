@@ -949,6 +949,18 @@ impl App {
         }
     }
 
+    /// What's going into the take, shown next to REC while a backing track plays.
+    fn take_contents(&self, val: impl Fn(&str, u32) -> (String, u32, bool), lab: impl Fn(&str) -> (String, u32, bool)) -> Vec<(String, u32, bool)> {
+        if self.backing.is_none() || !self.backing_on {
+            return Vec::new();
+        }
+        if self.backing_in_take {
+            vec![val("scratch + backing", WHITE)]
+        } else {
+            vec![lab("scratch only")]
+        }
+    }
+
     /// What the motion chip says for the input used last.
     fn motion_name(&self) -> &'static str {
         if self.sens_kind == Kind::Controller {
@@ -1548,8 +1560,15 @@ impl App {
             KeyCode::KeyR => {
                 let on = !self.shared.rec_request.load(Relaxed);
                 self.shared.rec_request.store(on, Relaxed);
+                let what = match (self.backing.is_some() && self.backing_on, self.backing_in_take) {
+                    (true, true) => " - recording scratch + backing track",
+                    (true, false) => " - recording the scratch only (U adds the backing track)",
+                    _ => "",
+                };
                 if on && self.click {
-                    self.say("take armed - starts on the next bar");
+                    self.say(format!("take armed - starts on the next bar{what}"));
+                } else if on && !what.is_empty() {
+                    self.say(format!("take started{what}"));
                 }
             }
             KeyCode::KeyT => {
@@ -1912,9 +1931,13 @@ impl App {
         left.push((vec![val(&format!("{:+.2}x", speed), sc)], 10));
         if self.shared.recording.load(Relaxed) {
             let secs = self.shared.rec_frames.load(Relaxed) / self.out_rate as u64;
-            left.push((vec![val("\u{f111} REC", RED), val(&format!("{}:{:02}", secs / 60, secs % 60), WHITE)], 10));
+            let mut seg = vec![val("\u{f111} REC", RED), val(&format!("{}:{:02}", secs / 60, secs % 60), WHITE)];
+            seg.extend(self.take_contents(val, lab));
+            left.push((seg, 10));
         } else if self.shared.rec_request.load(Relaxed) {
-            left.push((vec![val("REC ARMED", WHITE)], 10));
+            let mut seg = vec![val("REC ARMED", WHITE)];
+            seg.extend(self.take_contents(val, lab));
+            left.push((seg, 10));
         }
         left.push((vec![lab("MOTOR"), if self.motor { val("ON", GREEN) } else { val("OFF", DIM) }], 9));
         left.push((vec![val(if self.rpm45 { "45" } else { "33" }, LILAC), lab("rpm")], 3));
@@ -1922,7 +1945,9 @@ impl App {
         left.push((vec![lab("VOL"), val(&format!("{:.0}%", self.volume * 100.0), WHITE)], 6));
         if self.backing.is_some() {
             let state = if self.backing_on { val(&format!("\u{f04b} {:.0}%", self.backing_vol * 100.0), GREEN) } else { val("paused", DIM) };
-            left.push((vec![lab("BACKING"), state], 4));
+            // Whether takes get it too (U), so it's never a surprise afterwards.
+            let into = if self.backing_in_take { val("\u{f111} IN TAKES", RED) } else { ("not in takes".to_string(), DIM, false) };
+            left.push((vec![lab("BACKING"), state, into], 7));
         }
         if self.click {
             left.push((vec![lab("CLICK"), val(&format!("{:.0}", self.bpm), LILAC)], 4));

@@ -1,5 +1,9 @@
 # What's new in CUT
 
+## 0.3.2
+- You can always see whether the backing track goes into your takes. The status bar shows BACKING with "IN TAKES" in red, or "not in takes", and while recording, REC says "scratch + backing" or "scratch only".
+- Starting a take with the backing track playing tells you which one you're recording.
+
 ## 0.3.1
 - A take that stays completely silent (motor off, fader cut, nothing loaded) isn't kept, so accidental record presses don't leave empty files. CUT tells you when this happens.
 - Installing CUT to the launcher no longer makes it the default app for audio files. They keep opening in your usual player, and CUT is under "Open with".
