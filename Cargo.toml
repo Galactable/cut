@@ -1,0 +1,29 @@
+[package]
+name = "cut-deck"
+version = "0.2.0"
+edition = "2021"
+license = "CC0-1.0"
+
+[dependencies]
+anyhow = "1"
+cpal = { version = "0.15", features = ["jack"] }
+winit = { version = "0.30", default-features = false, features = ["x11", "rwh_06"] }
+softbuffer = { version = "0.4", default-features = false, features = ["x11", "x11-dlopen"] }
+symphonia = { version = "0.5", features = ["all"] }
+hound = "3.5"
+rtrb = "0.3"
+font8x8 = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+evdev = "0.12"
+ctrlc = { version = "3", features = ["termination"] }
+fontdue = "0.9"
+mp3lame-encoder = "0.2"
+libc = "0.2"
+alsa = "0.9"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+
+[profile.dev]
+opt-level = 2
