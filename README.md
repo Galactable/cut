@@ -91,7 +91,7 @@ Press **X** (or Devices in the menu bar) to see every input device CUT can use, 
 
 ## Wacom Intuos Pro
 
-The ExpressKeys and touch ring work as soon as the tablet is plugged in. The pad comes set up with the layout below, and you can change it under **X**. `tablet-setup.sh` still works if you prefer the desktop to handle the keys:
+The ExpressKeys and touch ring work as soon as the tablet is plugged in, once CUT can read the tablet (run `./input-access.sh` once, or unlock the pad from **X**). The pad comes set up with the layout below, and you can change it under **X**. `tablet-setup.sh` still works if you prefer the desktop to handle the keys:
 
 ```bash
 ./tablet-setup.sh
@@ -123,7 +123,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 
 ## Feel
 
-- Each surface (touchpad, tablet touch, mouse) has its own sensitivity and scratch motion, and **[ ]** and **TAB** change the one you used last. They're saved in `~/.config/CUT/settings.txt`.
+- Each input (touchpad, tablet touch, mouse, controllers) has its own sensitivity, and the touch surfaces and mouse have their own scratch motion. **[ ]** and **TAB** change the one you used last. They're saved in `~/.config/cut/settings.txt`.
 - **[** and **]** change sensitivity (shown as x1.00). Controllers share one setting, and each device has its own on top of it (see **X**). At x1.00 a quarter-second scratch is about 1.6 cm on the touchpad and 5 cm on the tablet.
 - **-** and **=** change smoothing: lower feels heavier, higher feels snappier.
 - **TAB** switches the scratch motion: AUTO (follows whatever line you scratch along, right/up = forward), left/right, up/down, or PLATTER (circle round the centre of the tablet, clockwise = forward, one turn = 1.8 s like a real 33). Tablet touch defaults to platter, and a dot on the on-screen record shows where your finger is.
@@ -131,7 +131,9 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 ## Start-up and view
 
 - CUT opens in full view, paused, with an empty record on the platter. Press **M** to start it: the empty run-out groove plays hiss, crackle and a scuff that ticks once per turn until you load a sample.
-- **H** shows or hides the key guide.
+- **H** shows or hides the key guide. **Alt** or **F10** opens the menu bar, where every command is also listed with its key.
+- **P** opens profiles: save your current feel and mixer settings under a name, and load them back later (for example one per controller or per routine).
+- **Ctrl+Q** quits. Quitting mid-take finishes the take first.
 
 ## Library and takes
 
@@ -142,7 +144,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 - The section normally sits on the record with 1 s of blank groove before it (so you can pull back past the start) and 3 s after. **G** makes it loop seamlessly instead, with no gaps.
 - **S** saves the section (clean) to `<samples folder>/<Folder>/` (default `~/Music/CUT`).
 - **,** and **.** step to the previous and next sample in the same folder.
-- **R** starts or stops a take of CUT's own output (after the fader and volume; never the click or other apps), saved to the takes folder (default `~/Music/CUT/Takes`, 32-bit float WAV). The file is saved as you go, so a crash or a forced quit mid-take keeps everything up to the last half second. A take that stays completely silent (motor off, or the fader cut the whole time) isn't kept.
+- **R** starts or stops a take of CUT's own output (after the fader and volume; never the click or other apps, and the backing track only if you press **U**), saved to the takes folder (default `~/Music/CUT/Takes`). Takes are 32-bit float WAV; **E** switches saved sections and takes to 320 kbps MP3. The file is saved as you go, so a crash or a forced quit mid-take keeps everything up to the last half second. A take that stays completely silent (motor off, or the fader cut the whole time) isn't kept.
 - **T** turns on the click, and **9** / **0** change the BPM (hold Ctrl for steps of 10). With the click on, a take starts on the next bar, so it lines up when you drop it at a bar in FL. The click is never recorded.
 
 ## Backing track
