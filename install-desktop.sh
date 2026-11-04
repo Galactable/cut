@@ -34,6 +34,14 @@ for s in $SIZES; do
     "$BIN" --write-icon "$ICONS/${s}x${s}/apps/cut.png" "$s"
 done
 
+TYPES="audio/wav audio/x-wav audio/mpeg audio/flac audio/ogg"
+# CUT should show up under "Open with", not become the default player: note each
+# type's current default so it can be put back after installing.
+declare -A BEFORE
+if command -v xdg-mime >/dev/null; then
+    for t in $TYPES; do BEFORE[$t]=$(xdg-mime query default "$t" 2>/dev/null || true); done
+fi
+
 mkdir -p "$APPS"
 cat > "$APPS/cut.desktop" <<EOF
 [Desktop Entry]
@@ -51,4 +59,13 @@ StartupWMClass=cut-deck
 EOF
 
 refresh
+if command -v xdg-mime >/dev/null; then
+    for t in $TYPES; do
+        prev=${BEFORE[$t]:-}
+        if [[ -n "$prev" && "$prev" != "cut.desktop" ]]; then
+            xdg-mime default "$prev" "$t"
+        fi
+    done
+fi
 echo "CUT is in the launcher: $APPS/cut.desktop"
+echo "Audio files still open in your usual player; CUT is under \"Open with\"."

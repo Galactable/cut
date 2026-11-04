@@ -1,6 +1,6 @@
 # CUT
 
-A vinyl scratch deck for Linux. Load a sample, then scratch it with your fingers on a laptop touchpad, a drawing tablet's touch surface, a MIDI DJ controller's jog wheel, or nearly any other input device. Record your takes as WAV or MP3 to drop into your DAW.
+A vinyl scratch deck for Linux. Load a sample, then scratch it with your fingers on a laptop touchpad, a drawing tablet's touch surface, a MIDI DJ controller's jog wheel, or nearly any other input device. Load a beat as a backing track to scratch over, then record your takes as WAV or MP3 to drop into your DAW.
 
 It's modelled on a real turntable: your hand controls the record's position, the platter spins on a slipmat, and the sound goes through a modelled cartridge and phono stage.
 
@@ -40,7 +40,7 @@ cargo build --release
 ./input-access.sh      # lets CUT read touchpads, tablets and gamepads directly (asks for your password)
 ```
 
-`./install-desktop.sh --remove` takes CUT out of the launcher again. Re-run it if you move the folder.
+Audio files keep opening in your usual player; CUT shows up under "Open with". `./install-desktop.sh --remove` takes CUT out of the launcher again. Re-run it if you move the folder.
 
 **Update** to the newest version later:
 
@@ -55,6 +55,18 @@ cd cut && git pull && cargo build --release
 ```
 
 Or start it from your app launcher. You can also start it with no file and drop a file onto the window, or press **O**.
+
+## Quick start: scratch a sample over a beat
+
+1. **Load the sample you want to scratch.** Press **O** (or drop the file onto the window). Drag across the top waveform to pick the part that goes on the record: a word, a stab, an "ahh".
+2. **Load the beat.** Press **Y** and choose a beat or a whole song. It plays under the record and loops.
+3. **Start both.** Press **B** to play the beat and **M** to start the record turning.
+4. **Scratch.** Put your hand on the record (two fingers on a touchpad, one on a tablet, a jog wheel, or a mouse drag) and cut with the crossfader (**Space**, **J**, **K**, **L**, or the buttons you set up under **X**). The crossfader only cuts the record, so the beat keeps playing.
+5. **Balance the levels.** **Up**/**Down** set the record's volume, and **5**/**6** set the beat's.
+6. **Record a take.** Press **R** to start and **R** again to stop. The beat jumps back to its start the moment recording begins, so the take and the beat begin together.
+7. **Use it in your DAW.** Put the beat on one track and the take on another, both starting at the same point. They line up. The take is the scratch alone, so you can mix, EQ and edit it separately.
+
+To keep the beat in the take as well (for a practice clip or a quick share), press **U** before recording.
 
 ## What makes it sound like vinyl
 
@@ -130,8 +142,28 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 - The section normally sits on the record with 1 s of blank groove before it (so you can pull back past the start) and 3 s after. **G** makes it loop seamlessly instead, with no gaps.
 - **S** saves the section (clean) to `<samples folder>/<Folder>/` (default `~/Music/CUT`).
 - **,** and **.** step to the previous and next sample in the same folder.
-- **R** starts or stops a take of CUT's own output (after the fader and volume; never the click or other apps), saved to the takes folder (default `~/Music/CUT/Takes`, 32-bit float WAV). The file is saved as you go, so a crash or a forced quit mid-take keeps everything up to the last half second.
+- **R** starts or stops a take of CUT's own output (after the fader and volume; never the click or other apps), saved to the takes folder (default `~/Music/CUT/Takes`, 32-bit float WAV). The file is saved as you go, so a crash or a forced quit mid-take keeps everything up to the last half second. A take that stays completely silent (motor off, or the fader cut the whole time) isn't kept.
 - **T** turns on the click, and **9** / **0** change the BPM (hold Ctrl for steps of 10). With the click on, a take starts on the next bar, so it lines up when you drop it at a bar in FL. The click is never recorded.
+
+## Backing track
+
+A backing track is a beat or song that plays under the record while you scratch. The record is what you scratch; the backing track just plays.
+
+| Key | What it does |
+| --- | --- |
+| **Y** | Load a backing track (WAV, MP3, FLAC, OGG, AIFF, M4A) |
+| **B** | Play or pause it (loads one first if none is loaded) |
+| **5** / **6** | Its volume down / up, separate from the record's |
+| **U** | Record it into takes too (off: takes are the scratch alone) |
+
+- **It's not on the crossfader.** Cuts, transforms and flares only cut the record, like a real mixer with the beat on the other channel.
+- **It loops,** so a short loop or a long song both work.
+- **It restarts when a take starts.** The moment recording begins, the backing track jumps to its start, so every take begins at the same point in the beat. In your DAW, line the take up with the start of the beat and you're done.
+- **With the click on** (**T**), recording waits for the next bar, and the backing track restarts on that same bar. Set the click to the beat's tempo with **9** / **0** if you want to hear it count you in.
+- **Takes are the scratch alone by default,** clean for mixing. Press **U** for the full mix instead. CUT says which one is on when you press it, and the BACKING menu shows it too.
+- **The status bar** shows **BACKING** with its volume while it plays, or *paused*.
+- **It's remembered:** next time you open CUT, the last backing track is loaded again, paused.
+- **Put it on a controller:** under **X**, pick any device and give "Backing track play/pause" a button.
 
 ## Version and what's new
 
@@ -144,15 +176,6 @@ CUT runs on any Linux desktop with X11. On Wayland it runs through XWayland (mos
 - **Sound:** CUT uses PipeWire's JACK support, or a JACK server, when one is running. Otherwise it plays through ALSA, which also covers PulseAudio systems through ALSA's pulse plugin. The only library it needs is `libasound` (alsa-lib), which every desktop distro installs. JACK is loaded only if it's there.
 - **Needed for parts of the app:** `zenity` (open and save dialogs), `xinput` (touchpad handling), `pkexec` with a polkit agent (giving access from the Devices menu; otherwise it prints the `sudo` command to run), and `xsetwacom` (only for `tablet-setup.sh`).
 - **Building:** Rust (rustup), a C compiler, and the ALSA headers: `alsa-lib` on Arch/CachyOS, `libasound2-dev` on Debian/Ubuntu, `alsa-lib-devel` on Fedora.
-
-## Backing track
-
-Load a beat or a whole song to scratch over. It plays under the record, unaffected by the crossfader.
-
-- **Y** loads a backing track and **B** plays or pauses it. **5** and **6** set its volume, separately from the record's.
-- It loops, and when a take starts recording it jumps back to its start at the same moment. In your DAW, drop the take at the same point as the beat and they line up. With the click on, both start on the next bar.
-- Takes record the scratch alone by default. **U** switches to recording the full mix with the backing track.
-- CUT remembers the last backing track and loads it (paused) next time.
 
 ## Latency
 

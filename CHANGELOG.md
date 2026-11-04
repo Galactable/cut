@@ -1,5 +1,9 @@
 # What's new in CUT
 
+## 0.3.1
+- A take that stays completely silent (motor off, fader cut, nothing loaded) isn't kept, so accidental record presses don't leave empty files. CUT tells you when this happens.
+- Installing CUT to the launcher no longer makes it the default app for audio files. They keep opening in your usual player, and CUT is under "Open with".
+
 ## 0.3.0
 - Backing track: press Y to load a beat or song that plays under the record, with its own volume (5 and 6) and B to play or pause. It loops, and it restarts from the top whenever a take starts recording, so your take lines up with it at 0:00 in your DAW.
 - Takes are the scratch alone by default, ready to drop over the beat. Press U to record the full mix with the backing track instead.

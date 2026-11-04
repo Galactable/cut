@@ -17,12 +17,17 @@ use rtrb::Consumer;
 
 use crate::engine::Shared;
 
+/// Below this the whole take counts as silence (about -80 dB).
+const SILENT: f32 = 1e-4;
+
 /// `takes` is read at the start of each take, so changing the folder applies to the next one.
 /// `mp3`: when a take ends, convert it from WAV to MP3.
 pub fn spawn(shared: Arc<Shared>, mut rx: Consumer<f32>, rate: u32, status: Arc<Mutex<Option<String>>>, takes: Arc<Mutex<PathBuf>>, mp3: Arc<AtomicBool>) {
     std::thread::spawn(move || {
         let mut writer: Option<(hound::WavWriter<std::io::BufWriter<std::fs::File>>, PathBuf)> = None;
         let mut checkpoint = Instant::now();
+        // Loudest sample in the take so far: a take that never made a sound isn't kept.
+        let mut peak = 0f32;
         loop {
             let quitting = shared.quitting.load(Relaxed);
             let on = shared.recording.load(Relaxed) && !quitting;
@@ -35,6 +40,7 @@ pub fn spawn(shared: Arc<Shared>, mut rx: Consumer<f32>, rate: u32, status: Arc<
                     Ok(w) => {
                         writer = Some((w, path));
                         checkpoint = Instant::now();
+                        peak = 0.0;
                     }
                     Err(e) => {
                         *status.lock().unwrap() = Some(format!("can't record: {e}"));
@@ -49,6 +55,7 @@ pub fn spawn(shared: Arc<Shared>, mut rx: Consumer<f32>, rate: u32, status: Arc<
                 while rx.slots() >= 2 {
                     for _ in 0..2 {
                         if let Ok(s) = rx.pop() {
+                            peak = peak.max(s.abs());
                             let _ = w.write_sample(s);
                         }
                     }
@@ -60,7 +67,12 @@ pub fn spawn(shared: Arc<Shared>, mut rx: Consumer<f32>, rate: u32, status: Arc<
             }
             if !on {
                 if let Some((w, path)) = writer.take() {
+                    let silent = peak < SILENT;
                     let msg = match w.finalize() {
+                        Ok(()) if silent => {
+                            let _ = std::fs::remove_file(&path);
+                            "take was silent (motor off or fader cut?), so it wasn't kept".to_string()
+                        }
                         // No MP3 conversion while closing: the WAV is kept as it is.
                         Ok(()) if mp3.load(Relaxed) && !quitting => {
                             *status.lock().unwrap() = Some("converting take to MP3...".into());
@@ -90,6 +102,26 @@ pub fn spawn(shared: Arc<Shared>, mut rx: Consumer<f32>, rate: u32, status: Arc<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn silent_take_is_not_kept() {
+        let dir = std::env::temp_dir().join(format!("cut-rec-silent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let shared = Arc::new(Shared::default());
+        let status: Arc<Mutex<Option<String>>> = Arc::default();
+        let (mut tx, rx) = rtrb::RingBuffer::new(48000);
+        spawn(shared.clone(), rx, 48000, status.clone(), Arc::new(Mutex::new(dir.clone())), Arc::default());
+        shared.recording.store(true, Relaxed);
+        for _ in 0..9600 {
+            let _ = tx.push(0.0);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        shared.recording.store(false, Relaxed);
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0), 0);
+        assert!(status.lock().unwrap().as_deref().unwrap_or("").contains("silent"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn take_survives_a_crash_and_closes_on_quit() {
