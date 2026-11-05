@@ -1,8 +1,12 @@
 # CUT
 
+[![Install check](https://github.com/Galactable/cut/actions/workflows/ci.yml/badge.svg)](https://github.com/Galactable/cut/actions/workflows/ci.yml) [![Latest release](https://img.shields.io/github/v/release/Galactable/cut)](https://github.com/Galactable/cut/releases/latest)
+
 A vinyl scratch deck for Linux. Load a sample, then scratch it with your fingers on a laptop touchpad, a drawing tablet's touch surface, a MIDI DJ controller's jog wheel, or nearly any other input device. Load a beat as a backing track to scratch over, then record your takes as WAV or MP3 to drop into your DAW.
 
 It's modelled on a real turntable: your hand controls the record's position, the platter spins on a slipmat, and the sound goes through a modelled cartridge and phono stage.
+
+![CUT fullscreen: the whole sample with the chosen section at the top, a close-up of the waveform at the needle, the record, the key guide, and the status bar with a backing track playing](docs/screenshot.png)
 
 ## Install
 
