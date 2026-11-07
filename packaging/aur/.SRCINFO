@@ -1,6 +1,6 @@
 pkgbase = cut-deck
 	pkgdesc = Vinyl scratch deck: scratch samples over a backing track with a touchpad, tablet or MIDI DJ controller, and record takes
-	pkgver = 0.3.4
+	pkgver = 0.4.0
 	pkgrel = 1
 	url = https://github.com/Galactable/cut
 	install = cut-deck.install
@@ -18,7 +18,7 @@ pkgbase = cut-deck
 	optdepends = polkit: unlock other devices from the Devices menu
 	optdepends = xf86-input-wacom: for tablet-setup.sh
 	options = !lto
-	source = cut-deck-0.3.4.tar.gz::https://github.com/Galactable/cut/archive/v0.3.4.tar.gz
-	sha256sums = 77b2b2b34b4d519d296be12d2b335cbb33e3d22ae71233fa20f6898ab865bd13
+	source = cut-deck-0.4.0.tar.gz::https://github.com/Galactable/cut/archive/v0.4.0.tar.gz
+	sha256sums = 807d4b6f915fc32b8db79ed072ebb9e363cfc90b8f85974d1eaf39ea8b6d8a4c
 
 pkgname = cut-deck
