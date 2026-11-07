@@ -141,8 +141,10 @@ The ExpressKeys and touch ring work as soon as the tablet is plugged in, once CU
 - **One fingertip** on the tablet's touch surface is your hand on the record. While CUT is focused the desktop ignores the touch surface, so it's scratch-only; switch away or quit and it's a normal touch surface again. Quick taps work for stops and skips.
 - A grab holds until every finger lifts, so a finger skipping off mid-stroke doesn't let go.
 - Keep the pen off the tablet: the tablet ignores touch while a pen is near it. CUT doesn't use the pen.
-- The top 3 ExpressKeys and the button in the middle of the touch ring are the crossfader: any of them held cuts the sound. **I** flips this to hamster mode, where held opens it.
-- The 4th key is motor, and the 4 keys below the ring are back to cue, record take, hold record and click. The touch ring is volume. Change any of it under **X**.
+- The top 3 ExpressKeys are **hot cues 1-3**. Hold one for a second to put that cue where the needle is in the section; a numbered marker appears on both waveforms. Tap it to jump straight there. On the keyboard they're **F2 F3 F4**.
+- The 4th key, next to the ring, is the crossfader: held cuts the sound. **I** flips this to hamster mode, where held opens it.
+- The button in the middle of the touch ring holds the record, and the 4 keys below the ring are back to cue, record take, click and motor. The touch ring is volume. Change any of it under **X**.
+- Hot cues are cleared when you load another file. Picking a new section keeps the ones that are still inside it.
 - To undo the tablet setup: `./tablet-setup.sh --reset`.
 
 The whole touch surface is scratch area whatever size the window is; CUT reads the tablet directly. **TAB** switches between AUTO, left/right, up/down and circular platter motion.

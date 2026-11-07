@@ -1,3 +1,4 @@
+mod cues;
 mod deck;
 mod desk;
 mod devices;
@@ -54,6 +55,9 @@ const MENUS: &[(&str, &[(&str, KeyCode, &str)])] = &[
         ("Zoom to section", KeyCode::KeyZ, "Z"),
         ("Loop section", KeyCode::KeyG, "G"),
         ("Back to cue", KeyCode::KeyC, "C / Bksp"),
+        ("Hot cue 1 (hold to set)", KeyCode::F2, "F2"),
+        ("Hot cue 2 (hold to set)", KeyCode::F3, "F3"),
+        ("Hot cue 3 (hold to set)", KeyCode::F4, "F4"),
     ]),
     ("DECK", &[
         ("Motor", KeyCode::KeyM, "M / Enter"),
@@ -135,7 +139,7 @@ const GUIDE: &[(&str, &str, &[(&str, &str)])] = &[
         ("- =", "smoothing"),
     ]),
     ("\u{f1de}", "FADER", &[("Space J K L", "cut"), ("I", "hamster mode")]),
-    ("\u{f04b}", "DECK", &[("M / Enter", "motor on/off"), ("C / Bksp", "back to cue"), ("3 4", "33 / 45 rpm"), ("Up Down", "volume")]),
+    ("\u{f04b}", "DECK", &[("M / Enter", "motor on/off"), ("C / Bksp", "back to cue"), ("F2 F3 F4", "hot cues (hold = set)"), ("3 4", "33 / 45 rpm"), ("Up Down", "volume")]),
     ("\u{f0c4}", "SAMPLE", &[
         ("drag wave", "pick section"),
         ("drag edge", "trim section"),
@@ -386,6 +390,8 @@ struct App {
     /// Device controls holding the fader cut / the record.
     dev_fader: HashSet<(Arc<str>, devices::Ctl)>,
     dev_hold: HashSet<(Arc<str>, devices::Ctl)>,
+    /// Hot cues 1-3 and their held buttons.
+    cues: cues::HotCues,
     /// Turning left over towards the next volume step, per control.
     vol_acc: HashMap<(Arc<str>, devices::Ctl), f64>,
     /// A jog without a touch plate holds the record while it's turning.
@@ -1068,6 +1074,7 @@ impl App {
         let rec = Arc::new(deck::build(&self.src, self.region.0, self.region.1, self.eq, self.noise, self.loop_section));
         self.rec = rec.clone();
         self.send(Msg::SetRecord(rec, keep_pos));
+        self.cues_keep_in_section();
     }
 
     fn load_path(&mut self, p: &Path) {
@@ -1075,6 +1082,7 @@ impl App {
             Ok(src) => {
                 self.region = (0, src.len());
                 self.src = src;
+                self.cues_clear();
                 self.path = Some(p.to_path_buf());
                 self.peaks.clear();
                 self.view = (0.0, self.src.len() as f64);
@@ -1541,6 +1549,15 @@ impl App {
                 self.update_hand();
                 return;
             }
+            KeyCode::F2 | KeyCode::F3 | KeyCode::F4 => {
+                let n = cue_key(code).unwrap();
+                if pressed && !repeat {
+                    self.cue_down(n);
+                } else if !pressed {
+                    self.cue_up(n, true);
+                }
+                return;
+            }
             _ => {}
         }
         if !pressed || repeat {
@@ -1570,6 +1587,8 @@ impl App {
                 let cue = self.rec.cue;
                 self.send(Msg::Seek(cue));
             }
+            // From the menu: a tap. Holding the key sets the cue (see `key`).
+            KeyCode::F2 | KeyCode::F3 | KeyCode::F4 => self.cue_jump(cue_key(code).unwrap()),
             KeyCode::Tab if self.sens_kind == Kind::Controller => {
                 self.say("controllers turn the record directly - Tab is for touch surfaces and the mouse");
             }
@@ -2145,6 +2164,13 @@ impl App {
         if rx1 >= ox && rx1 <= ox + ow {
             c.rect(rx1 - 2, oy, 2, oh, WHITE);
         }
+        for (n, at) in self.cues.at.iter().enumerate() {
+            let Some(s) = *at else { continue };
+            let x = to_x(s);
+            if x >= ox && x < ox + ow {
+                cue_marker(c, f, x, oy, oh, n);
+            }
+        }
         // When zoomed: the times at each edge and how far in.
         if vw < len - 1.0 {
             let sr = self.src.rate as f64;
@@ -2190,7 +2216,27 @@ impl App {
             let col = if a >= r0 && a < r1 { LILAC } else { DIM };
             c.vline(zx + i, zmid - (hi.min(1.0) * zamp) as i32, zmid - (lo.max(-1.0) * zamp) as i32, col);
         }
+        for (n, at) in self.cues.at.iter().enumerate() {
+            let Some(s) = *at else { continue };
+            let p = self.rec.cue + (s - self.region.0 as f64) * rate / self.src.rate as f64;
+            let x = zx + zw / 2 + ((p - needle) / spp).round() as i32;
+            if x >= zx && x < zx + zw {
+                cue_marker(c, f, x, zy, zh, n);
+            }
+        }
         c.rect(zx + zw / 2 - 1, zy, 2, zh, GREEN);
+        // A held hot cue button fills up beside the needle until its cue is set.
+        let mut hy = zy + 4;
+        for n in 0..cues::N {
+            if let Some(k) = self.cues.progress(n) {
+                let (bw, bh) = (34, 16);
+                let bx = zx + zw / 2 + 6;
+                c.boxed(bx, hy, bw, bh, CHIP, cues::COLORS[n]);
+                c.rect(bx + 1, hy + 1, ((bw - 2) as f32 * k) as i32, bh - 2, cues::COLORS[n]);
+                f.draw(c, bx + 4, hy, &(n + 1).to_string(), WHITE, 12.0, true);
+                hy += bh + 3;
+            }
+        }
         if let Some((msg, t)) = &self.note {
             if t.elapsed() < Duration::from_secs(4) {
                 let mw = f.width(msg, 14.0, false) + 16;
@@ -2505,6 +2551,7 @@ impl ApplicationHandler<InEvent> for App {
                 self.mouse_scratch = false;
                 self.dev_fader.clear();
                 self.dev_hold.clear();
+                self.cues_release_all();
                 self.update_fader();
                 self.update_hand();
                 self.sync_devices();
@@ -2598,6 +2645,7 @@ impl ApplicationHandler<InEvent> for App {
             }
         }
         self.drag_autoscroll();
+        self.cue_tick();
         // Keep redrawing while a device row is lit up, so the highlight goes away on time.
         if self.dev_menu.as_ref().is_some_and(|m| m.flash.as_ref().is_some_and(|(_, t)| t.elapsed() < Duration::from_millis(1000))) {
             self.dirty = true;
@@ -2614,6 +2662,24 @@ impl ApplicationHandler<InEvent> for App {
         let wait = if changed { 4 } else { 25 };
         el.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(wait)));
     }
+}
+
+/// Which hot cue a key is.
+fn cue_key(code: KeyCode) -> Option<usize> {
+    match code {
+        KeyCode::F2 => Some(0),
+        KeyCode::F3 => Some(1),
+        KeyCode::F4 => Some(2),
+        _ => None,
+    }
+}
+
+/// A hot cue's line on a waveform, with its number in a tab at the top.
+fn cue_marker(c: &mut Canvas, f: &mut text::Fonts, x: i32, y: i32, h: i32, n: usize) {
+    let col = cues::COLORS[n];
+    c.rect(x, y, 2, h, col);
+    c.rect(x, y, 13, 15, col);
+    f.draw(c, x + 3, y, &(n + 1).to_string(), BG, 12.0, true);
 }
 
 struct Audio {
@@ -2937,6 +3003,7 @@ fn main() -> anyhow::Result<()> {
         dev_pressed: HashSet::new(),
         dev_fader: HashSet::new(),
         dev_hold: HashSet::new(),
+        cues: cues::HotCues::default(),
         vol_acc: HashMap::new(),
         jog_last: None,
         started: Instant::now(),

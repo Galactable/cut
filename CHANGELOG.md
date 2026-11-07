@@ -1,5 +1,11 @@
 # What's new in CUT
 
+## 0.4.0
+- Hot cues. The top three ExpressKeys on a Wacom Intuos Pro (or F2, F3, F4 on the keyboard) are hot cues 1-3. Hold one for a second to set that cue where the needle is in your section. A box next to the needle fills up while you hold, and a numbered marker appears on both waveforms. Tap the key to jump straight to that cue.
+- Hot cues are cleared when you load another file. Picking a new section keeps the ones still inside it.
+- The 4th ExpressKey, next to the touch ring, is now the crossfader, and the button in the ring holds the record. Below the ring are back to cue, record take, click and motor. `tablet-setup.sh` uses the same layout.
+- Hot cues can also be given to any device button from the Devices menu (X).
+
 ## 0.3.4
 - Ready-made download: each release now has a `cut-<version>-linux-x86_64.tar.gz` that runs on current Ubuntu, Debian, Fedora, Arch and their relatives. Extract it and run `./install-desktop.sh`, with no building needed.
 - On Arch, CachyOS and Manjaro, CUT can be built as a proper package (`makepkg -si` in `packaging/aur`), with touchpad and tablet access included. It's coming to the AUR as `cut-deck` once AUR sign-ups reopen.

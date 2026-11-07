@@ -444,6 +444,14 @@ impl App {
                         }
                     }
                 },
+                Action::HotCue(n) => {
+                    let on = pressed(b, value, range, 0.5);
+                    if on && !was && live {
+                        self.cue_down(n);
+                    } else if !on && was {
+                        self.cue_up(n, live);
+                    }
+                }
                 Action::Cmd(code) => {
                     if pressed(b, value, range, 0.5) && !was && live {
                         self.command(code);

@@ -37,21 +37,23 @@ if [[ -n "$TOUCH" ]]; then
 fi
 
 # ExpressKeys for the other hand. "+key" holds the key for as long as the button is held.
-#   top three + 4th: crossfader (any held = cut; press I in the app for hamster)
-#   then: motor, back to cue, record take, hold record (shift)
+#   ring button: hold record (shift)
+#   top three: hot cues 1-3 (tap = jump, hold 1 s = set)
+#   4th: crossfader (held = cut; press I in the app for hamster)
+#   below the ring: back to cue, record take, click, motor
 if [[ -n "$PAD" ]]; then
-    xsetwacom set "$PAD" Button 1 "key +space"
-    xsetwacom set "$PAD" Button 2 "key +j"
-    xsetwacom set "$PAD" Button 3 "key +k"
-    xsetwacom set "$PAD" Button 8 "key +l"
-    xsetwacom set "$PAD" Button 9 "key m"
+    xsetwacom set "$PAD" Button 1 "key +shift"
+    xsetwacom set "$PAD" Button 2 "key +F2"
+    xsetwacom set "$PAD" Button 3 "key +F3"
+    xsetwacom set "$PAD" Button 8 "key +F4"
+    xsetwacom set "$PAD" Button 9 "key +space"
     xsetwacom set "$PAD" Button 10 "key c"
     xsetwacom set "$PAD" Button 11 "key r"
-    xsetwacom set "$PAD" Button 12 "key +shift"
-    xsetwacom set "$PAD" Button 13 "key t"
+    xsetwacom set "$PAD" Button 12 "key t"
+    xsetwacom set "$PAD" Button 13 "key m"
     # The touch ring scrolls by default, and scrolling scratches; make it volume instead.
     xsetwacom set "$PAD" AbsWheelUp "key Up"
     xsetwacom set "$PAD" AbsWheelDown "key Down"
 fi
 
-echo "done - one fingertip on the tablet = hand on record, ExpressKeys = fader + transport, ring = volume"
+echo "done - one fingertip on the tablet = hand on record, ExpressKeys = hot cues, fader + transport, ring = volume"

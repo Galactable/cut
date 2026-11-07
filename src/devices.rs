@@ -11,8 +11,8 @@
 //! grab=true
 //! scratch=cc:0:34/rel64
 //! per_turn=128
-//! fader=key:256 key:257 key:258 key:259
-//! motor=key:260
+//! cue1=key:257
+//! fader=key:260
 //! ```
 
 use std::{
@@ -191,6 +191,8 @@ pub enum Action {
     Hold,
     /// Turning sets the volume; a slider or knob sets it directly.
     Volume,
+    /// Hot cue 0-2: tap jumps to it, holding for a second sets it at the needle.
+    HotCue(usize),
     /// Runs exactly what this key does.
     Cmd(KeyCode),
 }
@@ -201,6 +203,9 @@ pub const ACTIONS: &[(&str, &str, Action)] = &[
     ("hold", "Hold record / jog touch plate", Action::Hold),
     ("motor", "Motor on/off", Action::Cmd(KeyCode::KeyM)),
     ("cue", "Back to cue", Action::Cmd(KeyCode::KeyC)),
+    ("cue1", "Hot cue 1 (tap: jump, hold: set)", Action::HotCue(0)),
+    ("cue2", "Hot cue 2 (tap: jump, hold: set)", Action::HotCue(1)),
+    ("cue3", "Hot cue 3 (tap: jump, hold: set)", Action::HotCue(2)),
     ("record", "Record take", Action::Cmd(KeyCode::KeyR)),
     ("click", "Click on/off", Action::Cmd(KeyCode::KeyT)),
     ("backing", "Backing track play/pause", Action::Cmd(KeyCode::KeyB)),
@@ -378,20 +383,23 @@ pub fn slug(id: &str) -> String {
 /// The setup a known device starts with, before anyone has changed it.
 pub fn builtin(id: &str, name: &str) -> Option<DevProfile> {
     let n = name.to_lowercase();
-    // Wacom ExpressKeys and touch ring, laid out like tablet-setup.sh:
-    // top four = crossfader, then motor, back to cue, record, hold record, click.
+    // Wacom ExpressKeys and touch ring, laid out like tablet-setup.sh. BTN_0 is the
+    // button in the middle of the ring, BTN_1-4 the keys above it (top first), BTN_5-8
+    // the keys below. Ring button = hold record, top three = hot cues 1-3, 4th = fader,
+    // then back to cue, record, click, motor.
     if n.contains("wacom") && n.ends_with("pad") {
         let mut p = DevProfile::new(id, name);
         let key = |c: u16| Bound { ctl: Ctl::Key(c), enc: Enc::Button };
         let act = action;
-        for c in 0x100..=0x103 {
-            p.binds.push((act("fader"), key(c)));
-        }
-        p.binds.push((act("motor"), key(0x104)));
+        p.binds.push((act("hold"), key(0x100)));
+        p.binds.push((act("cue1"), key(0x101)));
+        p.binds.push((act("cue2"), key(0x102)));
+        p.binds.push((act("cue3"), key(0x103)));
+        p.binds.push((act("fader"), key(0x104)));
         p.binds.push((act("cue"), key(0x105)));
         p.binds.push((act("record"), key(0x106)));
-        p.binds.push((act("hold"), key(0x107)));
-        p.binds.push((act("click"), key(0x108)));
+        p.binds.push((act("click"), key(0x107)));
+        p.binds.push((act("motor"), key(0x108)));
         p.binds.push((act("volume"), Bound { ctl: Ctl::Abs(0x08), enc: Enc::Wrap }));
         p.binds.sort_by_key(|(a, _)| *a);
         return Some(p);
