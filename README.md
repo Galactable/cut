@@ -185,6 +185,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 - **F** opens the folders menu: choose where saved samples and takes go, browse to a folder or make a new one, and choose whether to move your existing files there. Takes kept inside the samples folder move with it.
 
 - **C** (or **Backspace**) puts the needle back on the cue, the start of the section.
+- **Hot cues:** hold **F2**, **F3** or **F4** (or the top 3 ExpressKeys on a Wacom pad) for a second to set hot cue 1, 2 or 3 where the needle is. A box beside the needle fills up while you hold, then a numbered marker shows on both waveforms. Tap the key to jump there. Any device button can be a hot cue under **X**. Loading another file clears them, and choosing a new section keeps the ones still inside it.
 - Drag on the top waveform to choose the section that goes on the record. Grab an edge of the selection to move just that edge. **A** selects the whole file.
 - When zoomed in, drag towards either end of the waveform and it scrolls that way, faster the further out you go, so a selection can run past what's on screen.
 - On the touchpad, the top waveform is for selecting: a finger there never holds or scratches the record, so you can click and drag with two fingers or your thumb.
