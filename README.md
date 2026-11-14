@@ -114,7 +114,7 @@ To keep the beat in the take as well (for a practice clip or a quick share), pre
 CUT can record whatever your computer is playing and put it straight on the record, so you don't have to record it in another program, import the file and cut it.
 
 1. **Press W.** CUT starts recording what the computer plays. The status bar shows **RECORDING PC AUDIO** with a timer, and the level meter shows what's being picked up.
-2. **Play the part you want** in your browser, Plex, a media player or any other app.
+2. **Play the part you want** in your browser, a media player or any other app.
 3. **Press W again.** The recording goes on the record, ready to scratch.
 4. **Pick your cut and save it.** Drag across the top waveform to choose the part you want, then **S** saves it to your library.
 
