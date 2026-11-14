@@ -6,7 +6,7 @@ A vinyl scratch deck for Linux. Load a sample, or record one straight from whate
 
 It's modelled on a real turntable: your hand controls the record's position, the platter spins on a slipmat, and the sound goes through a modelled cartridge and phono stage.
 
-![CUT fullscreen: the whole sample with the chosen section at the top, a close-up of the waveform at the needle, the record, the key guide, and the status bar with a backing track playing](docs/screenshot.png)
+![CUT in a half-screen window: the whole sample with the chosen section at the top, a close-up of the waveform at the needle, the record with a hand on it, and the status bar](docs/screenshot.png)
 
 ## Install
 
