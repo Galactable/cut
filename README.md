@@ -2,7 +2,7 @@
 
 [![Install check](https://github.com/Galactable/cut/actions/workflows/ci.yml/badge.svg)](https://github.com/Galactable/cut/actions/workflows/ci.yml) [![Latest release](https://img.shields.io/github/v/release/Galactable/cut)](https://github.com/Galactable/cut/releases/latest)
 
-A vinyl scratch deck for Linux. Load a sample, then scratch it with your fingers on a laptop touchpad, a drawing tablet's touch surface, a MIDI DJ controller's jog wheel, or nearly any other input device. Load a beat as a backing track to scratch over, then record your takes as WAV or MP3 to drop into your DAW.
+A vinyl scratch deck for Linux. Load a sample, or record one straight from whatever your computer is playing (a YouTube video, a film), then scratch it with your fingers on a laptop touchpad, a drawing tablet's touch surface, a MIDI DJ controller's jog wheel, or nearly any other input device. Load a beat as a backing track to scratch over, then record your takes as WAV or MP3 to drop into your DAW.
 
 It's modelled on a real turntable: your hand controls the record's position, the platter spins on a slipmat, and the sound goes through a modelled cartridge and phono stage.
 
@@ -99,7 +99,7 @@ You can also start it with no file and drop a file onto the window, or press **O
 
 ## Quick start: scratch a sample over a beat
 
-1. **Load the sample you want to scratch.** Press **O** (or drop the file onto the window). Drag across the top waveform to pick the part that goes on the record: a word, a stab, an "ahh".
+1. **Load the sample you want to scratch.** Press **O** (or drop the file onto the window), or press **W** to [record it from a video or film](#sample-from-a-video-or-film-w). Drag across the top waveform to pick the part that goes on the record: a word, a stab, an "ahh".
 2. **Load the beat.** Press **Y** and choose a beat or a whole song. It plays under the record and loops.
 3. **Start both.** Press **B** to play the beat and **M** to start the record turning.
 4. **Scratch.** Put your hand on the record (two fingers on a touchpad, one on a tablet, a jog wheel, or a mouse drag) and cut with the crossfader (**Space**, **J**, **K**, **L**, or the buttons you set up under **X**). The crossfader only cuts the record, so the beat keeps playing.
@@ -108,6 +108,24 @@ You can also start it with no file and drop a file onto the window, or press **O
 7. **Use it in your DAW.** Put the beat on one track and the take on another, both starting at the same point. They line up. The take is the scratch alone, so you can mix, EQ and edit it separately.
 
 To keep the beat in the take as well (for a practice clip or a quick share), press **U** before recording.
+
+## Sample from a video or film (W)
+
+CUT can record whatever your computer is playing and put it straight on the record, so you don't have to record it in another program, import the file and cut it.
+
+1. **Press W.** CUT starts recording what the computer plays. The status bar shows **RECORDING PC AUDIO** with a timer, and the level meter shows what's being picked up.
+2. **Play the part you want** in your browser, Plex, a media player or any other app.
+3. **Press W again.** The recording goes on the record, ready to scratch.
+4. **Pick your cut and save it.** Drag across the top waveform to choose the part you want, then **S** saves it to your library.
+
+- **Silence is trimmed.** The quiet before the first sound and after the last is cut off, so you can press **W** first and start the video afterwards.
+- **The whole recording is kept** in `<samples folder>/Captures` (default `~/Music/CUT/Captures`), as WAV, or MP3 if you've switched the save format with **E**. **,** and **.** step through earlier recordings once one is loaded.
+- **CUT is silent while it records,** so the record, the click and the backing track don't end up in the recording. Other sounds the computer makes, such as notifications, are picked up.
+- **It records the default output,** the one your desktop's volume control is set to. If the video's own volume is turned down in its player, the recording is quieter too.
+- **It stops by itself after 10 minutes** and loads what it has.
+- **Quitting while it records** saves the recording to the Captures folder first.
+- **Put it on a controller:** under **X**, give "Record what's playing" a button.
+- It needs `parec`, which most desktops already have (see [Running on other Linux systems](#running-on-other-linux-systems)).
 
 ## What makes it sound like vinyl
 
@@ -122,7 +140,7 @@ To keep the beat in the take as well (for a practice clip or a quick share), pre
 Press **X** (or Devices in the menu bar) to see every input device CUT can use, including ones plugged in while it's running. Touch any control and its device lights up in the list.
 
 - **Guided setup** walks you through it. First, move what you want to scratch with (a jog wheel, dial, touch ring, knob or stick) and press Enter. Then turn it exactly once around to calibrate a record turn. Then press the buttons for the crossfader, hold record (or touch a jog's top plate), motor, back to cue and record take, and set the volume control. **Tab** skips a step.
-- Every other key command can be given a control too: pick its row and press the control. **Del** clears a row.
+- Most other commands can be given a control too (hot cues, click, backing track, recording what's playing, previous and next file and more): pick its row and press the control. **Del** clears a row.
 - **Sensitivity** (← →) and **scratch direction** are per device, on top of the controller **[ ]** setting.
 - MIDI controllers show up without any access setup; learn their controls here like any other device. Relative jogs (64-centred or two's complement), absolute knobs and faders, notes and CC buttons are told apart while you learn them.
 - While CUT is focused it takes a set-up device from the desktop, so its buttons don't also type or click. It gives the device back when you switch away. You can turn this off per device.
@@ -175,15 +193,14 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 
 ## Start-up and view
 
-- CUT opens in full view, paused, with an empty record on the platter. Press **M** (or **Enter**) to start it: the empty run-out groove plays hiss, crackle and a scuff that ticks once per turn until you load a sample.
+- CUT opens with the key guide hidden, paused, with an empty record on the platter. Press **M** (or **Enter**) to start it: the empty run-out groove plays hiss, crackle and a scuff that ticks once per turn until you load a sample.
 - **H** shows or hides the key guide. **Alt** (pressed and released on its own) or **F10** opens the menu bar, where every command is also listed with its key.
 - **P** opens profiles: save your current feel and mixer settings under a name, and load them back later (for example one per controller or per routine).
-- **Ctrl+Q** quits. Quitting mid-take finishes the take first.
+- **Ctrl+Q** quits. Quitting mid-take finishes the take first, and quitting while recording what's playing saves that recording.
 
 ## Library and takes
 
 - **F** opens the folders menu: choose where saved samples and takes go, browse to a folder or make a new one, and choose whether to move your existing files there. Takes kept inside the samples folder move with it.
-
 - **C** (or **Backspace**) puts the needle back on the cue, the start of the section.
 - **Hot cues:** hold **F2**, **F3** or **F4** (or the top 3 ExpressKeys on a Wacom pad) for a second to set hot cue 1, 2 or 3 where the needle is. A box beside the needle fills up while you hold, then a numbered marker shows on both waveforms. Tap the key to jump there. Any device button can be a hot cue under **X**. Loading another file clears them, and choosing a new section keeps the ones still inside it.
 - Drag on the top waveform to choose the section that goes on the record. Grab an edge of the selection to move just that edge. **A** selects the whole file.
@@ -193,7 +210,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 - The section normally sits on the record with 1 s of blank groove before it (so you can pull back past the start) and 3 s after. **G** makes it loop seamlessly instead, with no gaps.
 - **S** saves the section (clean) to `<samples folder>/<Folder>/` (default `~/Music/CUT`).
 - **,** and **.** step to the previous and next sample in the same folder.
-- **W** records whatever the computer is playing (a YouTube video, a film, any app), and **W** again stops and puts it on the record. The silence before and after the sound is trimmed, so you can press **W** and then start the video. Pick your cut on the top waveform and **S** saves it. The whole recording is also kept in `<samples folder>/Captures`, as WAV or MP3 (**E**). CUT is silent while it records so it doesn't record itself, but other sounds such as notifications are picked up. It records the default output, for up to 10 minutes.
+- **W** records whatever the computer is playing and puts it on the record: see [Sample from a video or film](#sample-from-a-video-or-film-w). Recordings are kept in `<samples folder>/Captures`.
 - **R** starts or stops a take of CUT's own output (after the fader and volume; never the click or other apps, and the backing track only if you press **U**), saved to the takes folder (default `~/Music/CUT/Takes`). Takes are 32-bit float WAV; **E** switches saved sections and takes to 320 kbps MP3. The file is saved as you go, so a crash or a forced quit mid-take keeps everything up to the last half second. A take that stays completely silent (motor off, or the fader cut the whole time) isn't kept.
 - **T** turns on the click, and **9** / **0** change the BPM (hold Ctrl for steps of 10). With the click on, a take starts on the next bar, so it lines up when you drop it at a bar in FL. The click is never recorded.
 
