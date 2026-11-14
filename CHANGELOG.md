@@ -1,5 +1,12 @@
 # What's new in CUT
 
+## 0.5.0
+- Record what's playing. Press **W** and CUT records whatever your computer is playing: a YouTube video, a film in Plex, anything. Press **W** again and it's on the record, ready to scratch. Drag the top waveform to pick your cut and **S** saves it to the library as usual, so there's no more recording somewhere else, importing and cutting.
+- The silence before and after the sound is trimmed off, so you can press **W** first and then start the video. The whole recording is also kept in a `Captures` folder inside your samples folder.
+- CUT goes quiet while it records, so the record, the click and the backing track don't end up in the recording. The status bar shows a timer, and the level meter shows what's being picked up. A recording stops by itself after 10 minutes.
+- It's in the File menu, and any device button can start and stop it from the Devices menu (X). It needs `parec`, which most desktops already have (package `pulseaudio-utils`, or `libpulse` on Arch).
+- The smoothing amount is back in view: the status bar shows SMOOTH with its value next to the input and sensitivity, so you can see what **-** and **=** are doing as you press them.
+
 ## 0.4.0
 - Hot cues. The top three ExpressKeys on a Wacom Intuos Pro (or F2, F3, F4 on the keyboard) are hot cues 1-3. Hold one for a second to set that cue where the needle is in your section. A box next to the needle fills up while you hold, and a numbered marker appears on both waveforms. Tap the key to jump straight to that cue.
 - Hot cues are cleared when you load another file. Picking a new section keeps the ones still inside it.

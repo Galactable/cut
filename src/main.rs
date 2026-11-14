@@ -1,3 +1,4 @@
+mod capture;
 mod cues;
 mod deck;
 mod desk;
@@ -41,6 +42,7 @@ use ui::*;
 const MENUS: &[(&str, &[(&str, KeyCode, &str)])] = &[
     ("FILE", &[
         ("Open sample...", KeyCode::KeyO, "O"),
+        ("Record what's playing", KeyCode::KeyW, "W"),
         ("Previous file", KeyCode::Comma, ","),
         ("Next file", KeyCode::Period, "."),
         ("Save section to library...", KeyCode::KeyS, "S"),
@@ -149,6 +151,7 @@ const GUIDE: &[(&str, &str, &[(&str, &str)])] = &[
         ("S", "save to library"),
         (", .", "prev / next file"),
         ("O", "open file"),
+        ("W", "record what's playing"),
     ]),
     ("\u{f130}", "TAKES", &[("R", "record take"), ("E", "WAV / MP3"), ("T", "click on/off"), ("9 0", "BPM (Ctrl = 10)")]),
     ("\u{f028}", "SOUND", &[("V", "vinyl EQ"), ("N", "surface noise")]),
@@ -416,6 +419,9 @@ struct App {
     backing_vol: f32,
     backing_in_take: bool,
     backing_rx: Option<mpsc::Receiver<Option<(PathBuf, Result<Source, String>)>>>,
+
+    /// Recording what the computer is playing (W), until it's stopped and loaded.
+    capture: Option<capture::Capture>,
 }
 
 impl App {
@@ -857,6 +863,11 @@ impl App {
                 None => ("none loaded".into(), DIM),
             }),
             KeyCode::KeyU => on(self.backing_in_take),
+            KeyCode::KeyW => Some(match &self.capture {
+                Some(c) if c.stopping => ("saving".into(), WHITE),
+                Some(_) => ("recording".into(), RED),
+                None => ("off".into(), DIM),
+            }),
             KeyCode::Digit5 | KeyCode::Digit6 => Some((format!("{:.0}%", self.backing_vol * 100.0), WHITE)),
             KeyCode::F11 => on(self.window.as_ref().is_some_and(|w| w.fullscreen().is_some())),
             KeyCode::Digit3 if !self.rpm45 => Some(("\u{f00c}".into(), GREEN)),
@@ -1080,19 +1091,62 @@ impl App {
     fn load_path(&mut self, p: &Path) {
         match deck::load(p) {
             Ok(src) => {
-                self.region = (0, src.len());
-                self.src = src;
-                self.cues_clear();
-                self.path = Some(p.to_path_buf());
-                self.peaks.clear();
-                self.view = (0.0, self.src.len() as f64);
-                self.rebuild(false);
-                if let Some(w) = &self.window {
-                    w.set_title(&format!("CUT - {}", self.src.name));
-                }
+                self.set_source(src, p);
                 self.say(format!("loaded {}", self.src.name));
             }
             Err(e) => self.say(format!("couldn't load: {e:#}")),
+        }
+    }
+
+    /// Puts a sample on the record, whole.
+    fn set_source(&mut self, src: Source, p: &Path) {
+        self.region = (0, src.len());
+        self.src = src;
+        self.cues_clear();
+        self.path = Some(p.to_path_buf());
+        self.peaks.clear();
+        self.view = (0.0, self.src.len() as f64);
+        self.rebuild(false);
+        if let Some(w) = &self.window {
+            w.set_title(&format!("CUT - {}", self.src.name));
+        }
+    }
+
+    /// W: start recording whatever the computer is playing, or stop and load it. CUT
+    /// goes quiet meanwhile so it doesn't record itself.
+    fn toggle_capture(&mut self) {
+        match &mut self.capture {
+            Some(c) if c.stopping => self.say("saving what was recorded..."),
+            Some(c) => {
+                c.stop();
+                self.send(Msg::Mute(false));
+            }
+            None => {
+                let dir = self.samples_dir.join("Captures");
+                match capture::Capture::start(self.out_rate, dir, self.save_mp3.load(Relaxed)) {
+                    Ok(c) => {
+                        self.capture = Some(c);
+                        self.send(Msg::Mute(true));
+                        self.say("recording what's playing - W again to stop and load it (CUT is quiet meanwhile)");
+                    }
+                    Err(e) => self.say(e),
+                }
+            }
+        }
+    }
+
+    /// A capture ended: by W, by running to its longest, or by failing.
+    fn capture_done(&mut self, res: Result<(PathBuf, Source), String>) {
+        let full = self.capture.take().is_some_and(|c| !c.stopping && c.secs() >= capture::MAX_SECS);
+        self.send(Msg::Mute(false));
+        match res {
+            Ok((path, src)) => {
+                let secs = src.len() as f64 / src.rate as f64;
+                self.set_source(src, &path);
+                let why = if full { format!(" (stopped at the {} minute limit)", capture::MAX_SECS / 60) } else { String::new() };
+                self.say(format!("recorded {secs:.1}s{why} - saved as {}. Drag the waveform to pick your cut, S saves it", library::pretty(&path)));
+            }
+            Err(e) => self.say(e),
         }
     }
 
@@ -1654,6 +1708,7 @@ impl App {
                 self.send(Msg::Bpm(self.bpm));
             }
             KeyCode::KeyO => self.open_dialog(),
+            KeyCode::KeyW => self.toggle_capture(),
             KeyCode::KeyS => self.save_dialog(),
             KeyCode::KeyP => self.open_profile_menu(),
             KeyCode::KeyH => self.show_guide = !self.show_guide,
@@ -2014,6 +2069,11 @@ impl App {
             seg.extend(self.take_contents(val, lab));
             left.push((seg, 10));
         }
+        if let Some(cap) = &self.capture {
+            let secs = cap.secs();
+            let what = if cap.stopping { val("SAVING", WHITE) } else { val("\u{f111} RECORDING PC AUDIO", RED) };
+            left.push((vec![what, val(&format!("{}:{:02}", secs / 60, secs % 60), WHITE)], 10));
+        }
         left.push((vec![lab("MOTOR"), if self.motor { val("ON", GREEN) } else { val("OFF", DIM) }], 9));
         left.push((vec![val(if self.rpm45 { "45" } else { "33" }, LILAC), lab("rpm")], 3));
         left.push((vec![lab("FADER"), if self.fader_open { val("OPEN", GREEN) } else { val("CUT", WHITE) }], 8));
@@ -2034,6 +2094,8 @@ impl App {
         let mut right: Vec<Seg> = vec![
             (if news { vec![val("\u{f005} NEW", GREEN), val(&ver_text, WHITE)] } else { vec![(ver_text.clone(), DIM, false)] }, if news { 7 } else { 1 }),
             (vec![val(kind_name(self.sens_kind), LILAC), lab(self.motion_name()), val(&format!("x{:.2}", self.sens[kind]), WHITE)], 5),
+            // How much the hand is smoothed (- and =): lower is heavier, higher snappier.
+            (vec![lab("SMOOTH"), val(&format!("{:.0} Hz", self.smooth_hz), WHITE)], 4),
             (match &self.profile {
                 Some(p) => vec![lab("PROFILE"), val(&format!("{p}{}", if self.profile_dirty { "*" } else { "" }), GREEN)],
                 None => vec![lab("PROFILE"), val("none", DIM)],
@@ -2122,7 +2184,11 @@ impl App {
         }
         let pos = self.shared.pos();
         let speed = self.shared.speed();
-        let level = f32::from_bits(self.shared.level.load(Relaxed));
+        // While recording what's playing, the meter shows that instead of CUT's own output.
+        let level = match &self.capture {
+            Some(cap) => f32::from_bits(cap.level.load(Relaxed)),
+            None => f32::from_bits(self.shared.level.load(Relaxed)),
+        };
         let rate = self.rec.rate;
         if !partial {
             self.draw_bar(c, f);
@@ -2644,6 +2710,13 @@ impl ApplicationHandler<InEvent> for App {
                 }
             }
         }
+        if let Some(c) = &self.capture {
+            // The timer and level keep moving while it records.
+            self.moved = true;
+            if let Ok(res) = c.done.try_recv() {
+                self.capture_done(res);
+            }
+        }
         self.drag_autoscroll();
         self.cue_tick();
         // Keep redrawing while a device row is lit up, so the highlight goes away on time.
@@ -3019,6 +3092,7 @@ fn main() -> anyhow::Result<()> {
         backing_vol: 0.7,
         backing_in_take: false,
         backing_rx: None,
+        capture: None,
     };
     // Settings used to live in ~/.config/scratchdeck (the app's old name).
     let new_dir = App::settings_path().parent().map(Path::to_path_buf);
@@ -3047,6 +3121,13 @@ fn main() -> anyhow::Result<()> {
     let closing = app.shared.clone();
     let res = el.run_app(&mut app);
     closing.close_take();
+    // Closed while recording what's playing: keep what was heard.
+    if let Some(mut cap) = app.capture.take() {
+        cap.stop();
+        if let Ok(Ok((path, _))) = cap.done.recv_timeout(Duration::from_secs(20)) {
+            eprintln!("saved capture {}", path.display());
+        }
+    }
     drop(app);
     res?;
     Ok(())

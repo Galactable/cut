@@ -217,6 +217,7 @@ pub const ACTIONS: &[(&str, &str, Action)] = &[
     ("rpm45", "45 rpm", Action::Cmd(KeyCode::Digit4)),
     ("prev", "Previous file", Action::Cmd(KeyCode::Comma)),
     ("next", "Next file", Action::Cmd(KeyCode::Period)),
+    ("capture", "Record what's playing (start/stop)", Action::Cmd(KeyCode::KeyW)),
     ("loop", "Loop section", Action::Cmd(KeyCode::KeyG)),
     ("flip", "Flip direction", Action::Cmd(KeyCode::KeyD)),
     ("sens_down", "Less sensitive", Action::Cmd(KeyCode::BracketLeft)),

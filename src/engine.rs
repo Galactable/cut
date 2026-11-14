@@ -32,6 +32,9 @@ pub enum Msg {
     BackingVolume(f32),
     /// Put the backing track into takes too (off: takes are the scratch alone).
     BackingInTake(bool),
+    /// Silence the output (takes aren't affected): CUT keeps itself out of a recording of
+    /// what the computer is playing.
+    Mute(bool),
 }
 
 #[derive(Default)]
@@ -105,6 +108,9 @@ pub struct Engine {
     fader: f32,
     fader_target: f32,
     volume: f32,
+    /// Output gain, ramped to 0 while muted.
+    out_gain: f32,
+    out_target: f32,
     play: [Biquad; 2],
     hpf: [Biquad; 2],
 
@@ -162,6 +168,8 @@ impl Engine {
             fader: 1.0,
             fader_target: 1.0,
             volume: 0.7,
+            out_gain: 1.0,
+            out_target: 1.0,
             play: [riaa_play(out_rate); 2],
             hpf: [Biquad::highpass(14.0, 0.707, out_rate); 2],
             click_on: false,
@@ -259,6 +267,7 @@ impl Engine {
             Msg::BackingPlay(on) => self.backing_on = on,
             Msg::BackingVolume(v) => self.backing_vol = v,
             Msg::BackingInTake(on) => self.backing_in_take = on,
+            Msg::Mute(on) => self.out_target = if on { 0.0 } else { 1.0 },
         }
     }
 
@@ -387,9 +396,14 @@ impl Engine {
             }
             // Without a backing track the scratch passes untouched (it's already limited).
             let (ml, mr) = if self.backing_on && self.backing.is_some() { (soft_clip(ol + bl), soft_clip(or + br)) } else { (ol, or) };
-            frame[0] = ml + click;
+            if self.out_gain < self.out_target {
+                self.out_gain = (self.out_gain + fstep).min(self.out_target);
+            } else if self.out_gain > self.out_target {
+                self.out_gain = (self.out_gain - fstep).max(self.out_target);
+            }
+            frame[0] = (ml + click) * self.out_gain;
             if ch > 1 {
-                frame[1] = mr + click;
+                frame[1] = (mr + click) * self.out_gain;
             }
             for x in frame.iter_mut().skip(2) {
                 *x = 0.0;

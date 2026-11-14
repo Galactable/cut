@@ -12,6 +12,7 @@ pkgbase = cut-deck
 	depends = gcc-libs
 	depends = glibc
 	depends = hicolor-icon-theme
+	depends = libpulse
 	depends = xorg-xinput
 	depends = zenity
 	optdepends = pipewire-jack: lowest latency through PipeWire

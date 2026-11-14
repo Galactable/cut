@@ -7,7 +7,7 @@ pkgdesc="Vinyl scratch deck: scratch samples over a backing track with a touchpa
 arch=('x86_64')
 url="https://github.com/Galactable/cut"
 license=('CC0-1.0')
-depends=('alsa-lib' 'gcc-libs' 'glibc' 'hicolor-icon-theme' 'xorg-xinput' 'zenity')
+depends=('alsa-lib' 'gcc-libs' 'glibc' 'hicolor-icon-theme' 'libpulse' 'xorg-xinput' 'zenity')
 # jack: only to build (the audio library checks for it); at run time it's optional.
 makedepends=('cargo' 'jack')
 optdepends=('pipewire-jack: lowest latency through PipeWire'

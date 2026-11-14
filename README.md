@@ -24,7 +24,7 @@ cd cut-*-linux-x86_64
 ./input-access.sh      # lets CUT read touchpads, tablets and gamepads directly (asks for your password)
 ```
 
-You can delete the download folder afterwards. It runs on current Ubuntu, Debian, Fedora, Arch and their relatives on x86_64. The dialogs need `zenity` and the touchpad features need `xinput`; most desktops have both, and otherwise they're one package-manager command away.
+You can delete the download folder afterwards. It runs on current Ubuntu, Debian, Fedora, Arch and their relatives on x86_64. The dialogs need `zenity`, the touchpad features need `xinput` and recording what's playing needs `parec`; most desktops have all three, and otherwise they're one package-manager command away.
 
 To update, download the new release and run `./install-desktop.sh` again. `./install-desktop.sh --remove` uninstalls it.
 
@@ -46,11 +46,11 @@ The package includes touchpad and tablet access, so there's no `input-access.sh`
 
 ```bash
 # Arch, CachyOS, Manjaro
-sudo pacman -S --needed base-devel git curl alsa-lib jack zenity xorg-xinput
+sudo pacman -S --needed base-devel git curl alsa-lib jack zenity xorg-xinput libpulse
 # Debian, Ubuntu, Mint, Pop!_OS
-sudo apt install build-essential git curl pkg-config libasound2-dev libjack-jackd2-dev zenity xinput
+sudo apt install build-essential git curl pkg-config libasound2-dev libjack-jackd2-dev zenity xinput pulseaudio-utils
 # Fedora
-sudo dnf install gcc git curl pkgconf-pkg-config alsa-lib-devel pipewire-jack-audio-connection-kit-devel zenity xinput
+sudo dnf install gcc git curl pkgconf-pkg-config alsa-lib-devel pipewire-jack-audio-connection-kit-devel zenity xinput pulseaudio-utils
 ```
 
 **2. Install Rust** (skip this if you already have it)
@@ -169,7 +169,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 
 - Each input (touchpad, tablet touch, mouse, controllers) has its own sensitivity, and the touch surfaces and mouse have their own scratch motion. **[ ]** and **TAB** change the one you used last. They're saved in `~/.config/cut/settings.txt`.
 - **[** and **]** change sensitivity (shown as x1.00). Controllers share one setting, and each device has its own on top of it (see **X**). At x1.00 a quarter-second scratch is about 1.6 cm on the touchpad and 5 cm on the tablet.
-- **-** and **=** change smoothing: lower feels heavier, higher feels snappier.
+- **-** and **=** change smoothing: lower feels heavier, higher feels snappier. The status bar shows the current value as SMOOTH.
 - **Up** / **Down** set the record's volume, up to 150%. VOL turns red above 100%: from there CUT's limiter squashes loud peaks, in your takes too, so keep it at 100% or below for clean takes. A knob or slider set up under **X** covers the same range.
 - **TAB** switches the scratch motion: AUTO (follows whatever line you scratch along, right/up = forward), left/right, up/down, or PLATTER (circle round the centre of the tablet, clockwise = forward, one turn = 1.8 s like a real 33). Tablet touch defaults to platter, and a dot on the on-screen record shows where your finger is.
 
@@ -193,6 +193,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 - The section normally sits on the record with 1 s of blank groove before it (so you can pull back past the start) and 3 s after. **G** makes it loop seamlessly instead, with no gaps.
 - **S** saves the section (clean) to `<samples folder>/<Folder>/` (default `~/Music/CUT`).
 - **,** and **.** step to the previous and next sample in the same folder.
+- **W** records whatever the computer is playing (a YouTube video, a film, any app), and **W** again stops and puts it on the record. The silence before and after the sound is trimmed, so you can press **W** and then start the video. Pick your cut on the top waveform and **S** saves it. The whole recording is also kept in `<samples folder>/Captures`, as WAV or MP3 (**E**). CUT is silent while it records so it doesn't record itself, but other sounds such as notifications are picked up. It records the default output, for up to 10 minutes.
 - **R** starts or stops a take of CUT's own output (after the fader and volume; never the click or other apps, and the backing track only if you press **U**), saved to the takes folder (default `~/Music/CUT/Takes`). Takes are 32-bit float WAV; **E** switches saved sections and takes to 320 kbps MP3. The file is saved as you go, so a crash or a forced quit mid-take keeps everything up to the last half second. A take that stays completely silent (motor off, or the fader cut the whole time) isn't kept.
 - **T** turns on the click, and **9** / **0** change the BPM (hold Ctrl for steps of 10). With the click on, a take starts on the next bar, so it lines up when you drop it at a bar in FL. The click is never recorded.
 
@@ -225,7 +226,7 @@ The status bar shows the version in its bottom right corner. After an update it 
 CUT runs on any Linux desktop with X11. On Wayland it runs through XWayland (most Wayland desktops include it), but the touchpad and touch features that use `xinput` don't work there.
 
 - **Sound:** CUT uses PipeWire's JACK support, or a JACK server, when one is running. Otherwise it plays through ALSA, which also covers PulseAudio systems through ALSA's pulse plugin. The only library it needs is `libasound` (alsa-lib), which every desktop distro installs. JACK is loaded only if it's there.
-- **Needed for parts of the app:** `zenity` (open and save dialogs), `xinput` (touchpad handling), `pkexec` with a polkit agent (giving access from the Devices menu; otherwise it prints the `sudo` command to run), and `xsetwacom` (only for `tablet-setup.sh`).
+- **Needed for parts of the app:** `zenity` (open and save dialogs), `xinput` (touchpad handling), `parec` (recording what's playing with **W**; from `pulseaudio-utils`, or `libpulse` on Arch, and it works on PipeWire and PulseAudio), `pkexec` with a polkit agent (giving access from the Devices menu; otherwise it prints the `sudo` command to run), and `xsetwacom` (only for `tablet-setup.sh`).
 - **Building:** Rust (rustup), a C compiler, and the ALSA and JACK development files: `alsa-lib` and `jack` (e.g. `pipewire-jack`) on Arch/CachyOS, `libasound2-dev` and `libjack-jackd2-dev` on Debian/Ubuntu, `alsa-lib-devel` and `pipewire-jack-audio-connection-kit-devel` on Fedora. JACK is only needed to build; at run time CUT uses it if it's there.
 
 ## Latency
