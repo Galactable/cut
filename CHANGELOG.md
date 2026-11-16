@@ -1,5 +1,11 @@
 # What's new in CUT
 
+## 0.6.1
+- Long files no longer freeze the window. Loading a file, and picking a long section of it (**A** for the whole sample, a long drag, or switching EQ, noise or loop), now happens in the background: the window stays live and what's on the record keeps playing until the new one is ready.
+- A loading indicator. While that's going on, a green box over the waveform says "loading" with the file's name, or "pressing the record", with moving dots and a count of seconds.
+- Long files load much faster. With vinyl noise on, putting an hour-long track on the record took about 20 seconds; it's now under 10, and picking the whole sample again takes about 3.
+- An hour-long file needs noticeably less memory while its record is being pressed.
+
 ## 0.6.0
 - Your own background. Press **F5** and choose a picture (PNG, JPG or WebP): it fills the window behind the waveforms and the record. **F7** sets how much it's dimmed, from 0% to 80% in steps of 20, so the waveforms and key guide stay easy to read. It starts at 60%.
 - Your own picture on the record. Press **F6** and choose one: it covers the whole record and turns with it, so you can see the spin at a glance.

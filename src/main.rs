@@ -188,6 +188,30 @@ enum Pic {
     Record,
 }
 
+/// Sections shorter than this are pressed on the spot (a few hundredths of a second);
+/// longer ones are pressed in the background so the window never stalls.
+const PRESS_NOW_SECS: usize = 30;
+
+/// A file on its way to the record: read and pressed in the background.
+struct Loading {
+    rx: mpsc::Receiver<Result<(Source, Record), String>>,
+    path: PathBuf,
+    /// EQ, noise and loop as they were when it started; if they've changed by the time
+    /// it's done, the record is pressed again.
+    opts: (bool, bool, bool),
+    /// What to say once it's on the record, instead of "loaded ...".
+    done: Option<String>,
+    since: Instant,
+}
+
+/// A long section being pressed in the background.
+struct Pressing {
+    rx: mpsc::Receiver<Record>,
+    region: (usize, usize),
+    keep_pos: bool,
+    since: Instant,
+}
+
 /// A picture that finished loading: where it goes, its file, and the picture or why not.
 type PicLoaded = (Pic, PathBuf, Result<pics::Picture, String>);
 
@@ -328,7 +352,7 @@ struct App {
     _stream: cpal::Stream,
     out_rate: u32,
 
-    src: Source,
+    src: Arc<Source>,
     path: Option<PathBuf>,
     region: (usize, usize),
     rec: Arc<Record>,
@@ -387,6 +411,13 @@ struct App {
     stroke_axis: (f64, f64),
 
     note: Option<(String, Instant)>,
+    /// The section the record on the deck was pressed from. `region` only moves on to a
+    /// new section once its record is ready, so the two always agree.
+    pressed: (usize, usize),
+    /// A file being read and pressed away from the window, which stays live meanwhile.
+    loading: Option<Loading>,
+    /// A long section being pressed the same way.
+    pressing: Option<Pressing>,
     open_rx: Option<mpsc::Receiver<Option<PathBuf>>>,
     save_rx: Option<mpsc::Receiver<Option<(String, String, String)>>>,
     menu: Option<ProfileMenu>,
@@ -401,7 +432,7 @@ struct App {
     dirty: bool,
     /// Touch moved the record: a partial redraw is enough.
     moved: bool,
-    last_sig: (u64, u32, u64, bool),
+    last_sig: (u64, u32, u64, bool, u8),
     folders: Option<FolderMenu>,
     /// Where saved sections go, and where takes are recorded (shared with the recorder).
     samples_dir: PathBuf,
@@ -1149,35 +1180,106 @@ impl App {
         self.dirty = true;
     }
 
+    /// Presses the record again for `region` and the current EQ, noise and loop. A long
+    /// section is pressed in the background: the old record stays on the deck, and
+    /// `region` stays with it, until the new one is ready.
     fn rebuild(&mut self, keep_pos: bool) {
-        let rec = Arc::new(deck::build(&self.src, self.region.0, self.region.1, self.eq, self.noise, self.loop_section));
+        // Unless the caller just chose a new section, a press already under way says
+        // which section is wanted.
+        let waiting = self.pressing.take();
+        let (want, keep_pos) = match &waiting {
+            Some(p) if self.region == self.pressed => (p.region, keep_pos && p.keep_pos),
+            _ => (self.region, keep_pos),
+        };
+        let (eq, noise, looped) = (self.eq, self.noise, self.loop_section);
+        if want.1.saturating_sub(want.0) < self.src.rate as usize * PRESS_NOW_SECS {
+            self.region = want;
+            let rec = deck::build(&self.src, want.0, want.1, eq, noise, looped);
+            self.put_on(rec, keep_pos);
+            return;
+        }
+        self.region = self.pressed;
+        let src = self.src.clone();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(deck::build(&src, want.0, want.1, eq, noise, looped));
+        });
+        self.pressing = Some(Pressing { rx, region: want, keep_pos, since: Instant::now() });
+        self.dirty = true;
+    }
+
+    /// Puts a pressed record on the deck; `region` is the section it was pressed from.
+    fn put_on(&mut self, rec: Record, keep_pos: bool) {
+        let rec = Arc::new(rec);
         self.rec = rec.clone();
+        self.pressed = self.region;
         self.send(Msg::SetRecord(rec, keep_pos));
         self.cues_keep_in_section();
     }
 
     fn load_path(&mut self, p: &Path) {
-        match deck::load(p) {
-            Ok(src) => {
-                self.set_source(src, p);
-                self.say(format!("loaded {}", self.src.name));
+        let path = p.to_path_buf();
+        self.load_with(p, None, move || deck::load(&path).map_err(|e| format!("couldn't load: {e:#}")));
+    }
+
+    /// Gets a sample with `get` and presses it whole, all in the background; what's on
+    /// the deck keeps playing until it's ready. Starting another load drops this one.
+    fn load_with(&mut self, p: &Path, done: Option<String>, get: impl FnOnce() -> Result<Source, String> + Send + 'static) {
+        let opts = (self.eq, self.noise, self.loop_section);
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(get().map(|src| {
+                let rec = deck::build(&src, 0, src.len(), opts.0, opts.1, opts.2);
+                (src, rec)
+            }));
+        });
+        self.loading = Some(Loading { rx, path: p.to_path_buf(), opts, done, since: Instant::now() });
+        self.dirty = true;
+    }
+
+    /// Takes in whatever the background has finished: a loaded file, or a pressed section.
+    fn collect_work(&mut self) {
+        if let Some(res) = self.loading.as_ref().and_then(|l| l.rx.try_recv().ok()) {
+            let Some(l) = self.loading.take() else { return };
+            match res {
+                Ok((src, rec)) => {
+                    // A section of the old sample still being pressed is no use now.
+                    self.pressing = None;
+                    self.region = (0, src.len());
+                    self.src = Arc::new(src);
+                    self.cues_clear();
+                    self.path = Some(l.path);
+                    self.peaks.clear();
+                    self.view = (0.0, self.src.len() as f64);
+                    self.put_on(rec, false);
+                    if let Some(w) = &self.window {
+                        w.set_title(&format!("CUT - {}", self.src.name));
+                    }
+                    let msg = l.done.unwrap_or_else(|| format!("loaded {}", self.src.name));
+                    self.say(msg);
+                    if l.opts != (self.eq, self.noise, self.loop_section) {
+                        self.rebuild(true);
+                    }
+                }
+                Err(e) => self.say(e),
             }
-            Err(e) => self.say(format!("couldn't load: {e:#}")),
+        }
+        if let Some(rec) = self.pressing.as_ref().and_then(|p| p.rx.try_recv().ok()) {
+            let Some(p) = self.pressing.take() else { return };
+            self.region = p.region;
+            self.put_on(rec, p.keep_pos);
+            self.dirty = true;
         }
     }
 
-    /// Puts a sample on the record, whole.
-    fn set_source(&mut self, src: Source, p: &Path) {
-        self.region = (0, src.len());
-        self.src = src;
-        self.cues_clear();
-        self.path = Some(p.to_path_buf());
-        self.peaks.clear();
-        self.view = (0.0, self.src.len() as f64);
-        self.rebuild(false);
-        if let Some(w) = &self.window {
-            w.set_title(&format!("CUT - {}", self.src.name));
+    /// What the background is busy with, for the chip over the waveform, and how long
+    /// it's been at it.
+    fn busy(&self) -> Option<(String, Duration)> {
+        if let Some(l) = &self.loading {
+            let name = l.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            return Some((format!("loading {name}"), l.since.elapsed()));
         }
+        self.pressing.as_ref().map(|p| ("pressing the record".to_string(), p.since.elapsed()))
     }
 
     /// W: start recording whatever the computer is playing, or stop and load it. CUT
@@ -1210,9 +1312,9 @@ impl App {
         match res {
             Ok((path, src)) => {
                 let secs = src.len() as f64 / src.rate as f64;
-                self.set_source(src, &path);
                 let why = if full { format!(" (stopped at the {} minute limit)", capture::MAX_SECS / 60) } else { String::new() };
-                self.say(format!("recorded {secs:.1}s{why} - saved as {}. Drag the waveform to pick your cut, S saves it", library::pretty(&path)));
+                let done = format!("recorded {secs:.1}s{why} - saved as {}. Drag the waveform to pick your cut, S saves it", library::pretty(&path));
+                self.load_with(&path, Some(done), move || Ok(src));
             }
             Err(e) => self.say(e),
         }
@@ -2085,7 +2187,7 @@ impl App {
 
     /// Everything on screen that changes without input: needle position, level meter,
     /// take timer, whether a message is showing.
-    fn frame_sig(&self) -> (u64, u32, u64, bool) {
+    fn frame_sig(&self) -> (u64, u32, u64, bool, u8) {
         let level = f32::from_bits(self.shared.level.load(Relaxed));
         let rec = if self.shared.recording.load(Relaxed) {
             1 + self.shared.rec_frames.load(Relaxed) / self.out_rate as u64
@@ -2093,7 +2195,9 @@ impl App {
             self.shared.rec_request.load(Relaxed) as u64
         };
         let note = self.note.as_ref().is_some_and(|(_, t)| t.elapsed() < Duration::from_secs(4));
-        (self.shared.pos().to_bits(), (level * 70.0) as u32, rec, note)
+        // The busy chip's dots tick over a few times a second.
+        let busy = self.busy().map_or(0, |(_, t)| 1 + (t.as_millis() / 300 % 3) as u8);
+        (self.shared.pos().to_bits(), (level * 70.0) as u32, rec, note, busy)
     }
 
     fn draw(&mut self) {
@@ -2475,7 +2579,20 @@ impl App {
                 hy += bh + 3;
             }
         }
-        if let Some((msg, t)) = &self.note {
+        if let Some((what, t)) = self.busy() {
+            // Stays up for as long as the work takes, with moving dots and a count of
+            // seconds so it's plain that CUT is busy and not stuck.
+            let dots = &"..."[..1 + (t.as_millis() / 300 % 3) as usize];
+            let secs = if t.as_secs() >= 2 { format!("  {} s", t.as_secs()) } else { String::new() };
+            let msg = format!("{what}{dots}");
+            let mw = f.width(&format!("{what}...{secs}"), 14.0, false) + 16;
+            c.boxed(zx + 6, zy + zh - 28, mw.min(zw - 12), 22, CHIP, GREEN);
+            f.draw(c, zx + 14, zy + zh - 26, &msg, WHITE, 14.0, false);
+            if !secs.is_empty() {
+                let sx = zx + 14 + f.width(&format!("{what}..."), 14.0, false);
+                f.draw(c, sx, zy + zh - 26, &secs, WHITE, 14.0, false);
+            }
+        } else if let Some((msg, t)) = &self.note {
             if t.elapsed() < Duration::from_secs(4) {
                 let mw = f.width(msg, 14.0, false) + 16;
                 c.boxed(zx + 6, zy + zh - 28, mw.min(zw - 12), 22, CHIP, WHITE);
@@ -2861,6 +2978,7 @@ impl ApplicationHandler<InEvent> for App {
             return;
         }
         while self.trash.pop().is_ok() {}
+        self.collect_work();
         self.update_hand();
         let status = self.take_status.lock().unwrap().take();
         if let Some(s) = status {
@@ -3204,7 +3322,7 @@ fn main() -> anyhow::Result<()> {
         out_rate,
         region: (0, src.len()),
         path: args.first().map(PathBuf::from),
-        src,
+        src: Arc::new(src),
         rec,
         peaks: Vec::new(),
         peaks_key: (0, 0, 0),
@@ -3247,6 +3365,9 @@ fn main() -> anyhow::Result<()> {
         stroke_cov: (1e-3, 0.0, 0.0),
         stroke_axis: (1.0, 0.0),
         note: None,
+        pressed: (0, src_len),
+        loading: None,
+        pressing: None,
         open_rx: None,
         save_rx: None,
         menu: None,
@@ -3256,7 +3377,7 @@ fn main() -> anyhow::Result<()> {
         icon: ui::record_icon(ICON_PX),
         dirty: true,
         moved: false,
-        last_sig: (0, 0, 0, false),
+        last_sig: (0, 0, 0, false, 0),
         folders: None,
         samples_dir: library::root(),
         takes_dir: takes_dir.clone(),

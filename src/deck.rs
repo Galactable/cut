@@ -113,6 +113,13 @@ impl Rng {
     }
 }
 
+/// Lets a crackle die away. Cut off at silence: left alone it sinks to the smallest float
+/// and sticks there, and arithmetic on numbers that small is many times slower.
+fn decay(pop: f32, by: f32) -> f32 {
+    let p = pop * by;
+    if p.abs() < 1e-9 { 0.0 } else { p }
+}
+
 /// An empty record sitting in its run-out groove: one revolution of hiss and crackle,
 /// with a scuff that ticks once per turn, looping forever. What you hear before a sample
 /// is loaded.
@@ -129,7 +136,7 @@ fn build_empty(rate: f64) -> Record {
         if i == cycle / 3 {
             pop = 0.7;
         }
-        pop *= 0.55;
+        pop = decay(pop, 0.55);
         *v = rng.next() * 0.007 + pop;
     }
     let other: Vec<f32> = (0..cycle).map(|i| groove[i] * 0.85 + groove[(i * 7 + 13) % cycle] * 0.15).collect();
@@ -153,7 +160,15 @@ fn build_empty(rate: f64) -> Record {
 /// loop point and the engine can wrap the needle without a seam.
 fn wrap_cycle(c: &[f32]) -> Vec<f32> {
     let n = c.len();
-    (0..n + 2 * MARGIN).map(|i| c[(i + n - MARGIN % n) % n]).collect()
+    let total = n + 2 * MARGIN;
+    let mut out = Vec::with_capacity(total);
+    let mut from = (n - MARGIN % n) % n;
+    while out.len() < total {
+        let take = (n - from).min(total - out.len());
+        out.extend_from_slice(&c[from..from + take]);
+        from = 0;
+    }
+    out
 }
 
 /// The section as a locked groove: it repeats seamlessly with no lead-in or run-out.
@@ -180,10 +195,12 @@ fn build_loop(src: &Source, start: usize, end: usize, eq: bool, noise: bool) -> 
     let (mut cl, mut cr) = (take(&src.l), take(&src.r));
     let mono: Vec<f32> = cl.iter().zip(&cr).map(|(a, b)| 0.5 * (a + b)).collect();
     if eq {
-        // Run the cut filter round the loop twice so its state matches at the seam.
+        // Run the cut filter over the end of the loop first so its state matches at the
+        // seam. A second is plenty: the filter forgets within a few hundredths.
+        let warm = cycle.saturating_sub(rate as usize);
         for ch in [&mut cl, &mut cr] {
             let mut f = riaa_cut(rate);
-            for v in ch.iter() {
+            for v in &ch[warm..] {
                 f.process(*v as f64);
             }
             for v in ch.iter_mut() {
@@ -198,16 +215,20 @@ fn build_loop(src: &Source, start: usize, end: usize, eq: bool, noise: bool) -> 
             if rng.next() > 1.0 - 2.0 * 3.0 / rate as f32 {
                 pop = rng.next() * 0.25;
             }
-            pop *= 0.6;
+            pop = decay(pop, 0.6);
             let v = rng.next() * 0.0025 + pop;
             cl[i] += v;
             cr[i] += v * 0.8;
         }
     }
+    // One at a time, letting go of each plain copy as soon as it's wrapped: on a long
+    // file these are hundreds of megabytes apiece.
+    let wrapped = |c: Vec<f32>| wrap_cycle(&c);
+    let (l, r, mono) = (wrapped(cl), wrapped(cr), wrapped(mono));
     Record {
-        l: wrap_cycle(&cl),
-        r: wrap_cycle(&cr),
-        mono: wrap_cycle(&mono),
+        l,
+        r,
+        mono,
         rate,
         cue: MARGIN as f64,
         region_len: cycle,
@@ -261,7 +282,7 @@ pub fn build(src: &Source, start: usize, end: usize, eq: bool, noise: bool, loop
             if rng.next() > 1.0 - 2.0 * 3.0 / rate as f32 {
                 pop = rng.next() * 0.25;
             }
-            pop *= 0.6;
+            pop = decay(pop, 0.6);
             let v = hiss + pop;
             l[i] += v;
             r[i] += v * 0.8 + rng.next() * 0.0008;
