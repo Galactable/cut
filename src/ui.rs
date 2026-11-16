@@ -13,8 +13,10 @@ pub const GREEN: u32 = 0x0aff02;
 pub const WHITE: u32 = 0xf4f4fa;
 pub const RED: u32 = 0xff3b4a;
 const LABEL: u32 = 0x08080b;
+/// The record's face with the groove styling turned off.
+const FLAT: u32 = 0x17171d;
 
-fn mix(bg: u32, fg: u32, a: u32) -> u32 {
+pub fn mix(bg: u32, fg: u32, a: u32) -> u32 {
     let ch = |s: u32| {
         let (b, f) = ((bg >> s) & 0xff, (fg >> s) & 0xff);
         ((b * (255 - a) + f * a) / 255) << s
@@ -102,54 +104,152 @@ impl Canvas<'_> {
         }
     }
 
-    /// Copies the pre-drawn record in at (cx, cy), then draws the cue line at `angle`
-    /// (radians, 0 = 12 o'clock) on top.
-    pub fn platter(&mut self, cx: i32, cy: i32, img: &PlatterImage, angle: f64) {
+    /// Copies the pre-drawn record in at (cx, cy), then on top: your picture across the
+    /// whole record (`art`: a square of `img.side()` pixels each way) and the cue line,
+    /// both turned to `angle` (radians, 0 = 12 o'clock). Only the record's own circle is
+    /// touched, so whatever is behind its corners stays.
+    pub fn platter(&mut self, cx: i32, cy: i32, img: &PlatterImage, angle: f64, art: Option<&[u32]>, cue: bool) {
         let half = img.size as i32 / 2;
-        let (x0, y0) = (cx - half, cy - half);
-        let xa = x0.max(0);
-        let xb = (x0 + img.size as i32).min(self.w as i32);
-        if xa < xb {
-            for iy in 0..img.size as i32 {
-                let y = y0 + iy;
-                if y < 0 || y >= self.h as i32 {
-                    continue;
-                }
-                let src = iy as usize * img.size + (xa - x0) as usize;
-                let dst = y as usize * self.w + xa as usize;
-                let n = (xb - xa) as usize;
-                self.px[dst..dst + n].copy_from_slice(&img.px[src..src + n]);
+        let art = art.filter(|a| a.len() == img.size * img.size);
+        let (sn, co) = angle.sin_cos();
+        // Positions on the picture in 1/65536ths of a pixel, so the turn is smooth.
+        let turn = ((sn * 65536.0) as i32, (co * 65536.0) as i32);
+        // The canvas rows the record covers.
+        let (ya, yb) = ((cy - half).max(0), (cy + half + 1).min(self.h as i32));
+        if ya < yb && self.w > 0 {
+            let w = self.w;
+            let band = &mut self.px[ya as usize * w..yb as usize * w];
+            // Turning a picture is real work for every pixel, so it's shared between cores.
+            let cores = if art.is_some() { std::thread::available_parallelism().map_or(1, |n| n.get()).min(4) } else { 1 };
+            let rows_each = ((yb - ya) as usize).div_ceil(cores).max(1);
+            if cores == 1 {
+                platter_rows(band, w, ya, cx, cy, img, art, turn);
+            } else {
+                std::thread::scope(|sc| {
+                    for (i, part) in band.chunks_mut(rows_each * w).enumerate() {
+                        let y = ya + (i * rows_each) as i32;
+                        sc.spawn(move || platter_rows(part, w, y, cx, cy, img, art, turn));
+                    }
+                });
             }
         }
         let (r, label) = (img.r, img.r * 0.33);
-        let a = angle - std::f64::consts::FRAC_PI_2;
-        let (s, co) = a.sin_cos();
-        let (cx, cy) = (cx as f64, cy as f64);
-        // The cue sticker line runs from the label's edge to the rim.
-        self.line(cx + co * (label + 3.0), cy + s * (label + 3.0), cx + co * (r - 6.0), cy + s * (r - 6.0), 4, GREEN);
+        if cue {
+            let a = angle - std::f64::consts::FRAC_PI_2;
+            let (s, co) = a.sin_cos();
+            let (cx, cy) = (cx as f64, cy as f64);
+            // The cue sticker line runs from the label's edge to the rim.
+            self.line(cx + co * (label + 3.0), cy + s * (label + 3.0), cx + co * (r - 6.0), cy + s * (r - 6.0), 4, GREEN);
+        }
     }
 }
 
+/// The colour at (x, y) in a `w` x `h` picture, blended from the four pixels around it.
+pub fn bilerp(px: &[u32], w: usize, h: usize, x: f64, y: f64) -> u32 {
+    let x = x.clamp(0.0, (w - 1) as f64);
+    let y = y.clamp(0.0, (h - 1) as f64);
+    let (xa, ya) = (x as usize, y as usize);
+    let (xb, yb) = ((xa + 1).min(w - 1), (ya + 1).min(h - 1));
+    let (fx, fy) = (((x - xa as f64) * 255.0) as u32, ((y - ya as f64) * 255.0) as u32);
+    let top = mix(px[ya * w + xa], px[ya * w + xb], fx);
+    let bottom = mix(px[yb * w + xa], px[yb * w + xb], fx);
+    mix(top, bottom, fy)
+}
+
+/// Draws the record into `rows` (whole canvas rows, `w` wide, the first being row `y0`).
+#[allow(clippy::too_many_arguments)]
+fn platter_rows(rows: &mut [u32], w: usize, y0: i32, cx: i32, cy: i32, img: &PlatterImage, art: Option<&[u32]>, (fsn, fco): (i32, i32)) {
+    let half = img.size as i32 / 2;
+    for (k, row) in rows.chunks_mut(w).enumerate() {
+        // This row's slice of the circle.
+        let dy = y0 + k as i32 - cy;
+        if (dy as f64).abs() > img.r {
+            continue;
+        }
+        let hw = (img.r * img.r - (dy * dy) as f64).max(0.0).sqrt() as i32;
+        let xa = (cx - hw).max(0);
+        let xb = (cx + hw + 1).min(w as i32);
+        if xa >= xb {
+            continue;
+        }
+        let src = (dy + half) as usize * img.size + (xa - cx + half) as usize;
+        let n = (xb - xa) as usize;
+        let out = &mut row[xa as usize..xb as usize];
+        let Some(art) = art else {
+            out.copy_from_slice(&img.px[src..src + n]);
+            continue;
+        };
+        // Each screen point turned back to where it sits on the unturned picture. Turning
+        // keeps it inside the record, so inside the picture.
+        let dx = xa - cx;
+        let mut u = (half << 16) + dx * fco + dy * fsn;
+        let mut v = (half << 16) - dx * fsn + dy * fco;
+        for ((o, &veil), &plain) in out.iter_mut().zip(&img.veil[src..src + n]).zip(&img.px[src..src + n]) {
+            *o = if veil == NO_ART {
+                plain
+            } else {
+                let at = (v >> 16) as usize * img.size + (u >> 16) as usize;
+                let (fx, fy) = ((u >> 8 & 255) as u32, (v >> 8 & 255) as u32);
+                let (a, b) = (&art[at..at + 2], &art[at + img.size..at + img.size + 2]);
+                lerp256(lerp256(lerp256(a[0], a[1], fx), lerp256(b[0], b[1], fx), fy), 0, veil as u32)
+            };
+            u += fco;
+            v -= fsn;
+        }
+    }
+}
+
+/// `a` moved `f`/256 of the way to `b`, two colour channels at a time.
+#[inline]
+fn lerp256(a: u32, b: u32, f: u32) -> u32 {
+    let rb = ((a & 0xff00ff) * (256 - f) + (b & 0xff00ff) * f) >> 8;
+    let g = ((a & 0x00ff00) * (256 - f) + (b & 0x00ff00) * f) >> 8;
+    (rb & 0xff00ff) | (g & 0x00ff00)
+}
+
+/// In a record's veil: your picture doesn't show here (rim, spindle, outside the record).
+const NO_ART: u8 = 255;
+/// How much the two groove rings darken your picture, out of 256.
+const GROOVE_VEIL: (u8, u8) = (30, 78);
+
 /// The record without its cue line: grooves, label, rim. It looks the same at every
-/// angle, so it's drawn once per size (and hand-on rim colour) and copied each frame.
+/// angle, so it's drawn once per size (and hand-on rim colour, and grooves on or off)
+/// and copied each frame.
 pub struct PlatterImage {
     pub r: f64,
     pub held: bool,
+    pub grooves: bool,
     size: usize,
     px: Vec<u32>,
+    /// For a picture on the record: how much each pixel darkens it (the groove rings), or
+    /// `NO_ART` where the record itself shows instead.
+    veil: Vec<u8>,
 }
 
 impl PlatterImage {
-    pub fn new(r: f64, held: bool) -> Self {
+    /// The side of the square picture that covers the record.
+    pub fn side(&self) -> usize {
+        self.size
+    }
+
+    pub fn new(r: f64, held: bool, grooves: bool) -> Self {
         let c = r.ceil() as i32;
         let size = (2 * c + 1) as usize;
         let label = r * 0.33;
         let mut px = vec![BG; size * size];
+        let mut veil = vec![NO_ART; size * size];
         for iy in 0..size {
             for ix in 0..size {
                 let d = ((ix as i32 - c) as f64).hypot((iy as i32 - c) as f64);
                 if d > r {
                     continue;
+                }
+                if d >= 4.0 && d <= r - 3.0 {
+                    veil[iy * size + ix] = match (grooves, (d as i32 / 3) % 2 == 0) {
+                        (false, _) => 0,
+                        (true, true) => GROOVE_VEIL.0,
+                        (true, false) => GROOVE_VEIL.1,
+                    };
                 }
                 px[iy * size + ix] = if d < 4.0 {
                     0x9a9aa8
@@ -158,6 +258,8 @@ impl PlatterImage {
                     if d > label - 2.0 { 0x2a2a34 } else { LABEL }
                 } else if d > r - 3.0 {
                     if held { LILAC } else { 0x2a2a34 }
+                } else if !grooves {
+                    FLAT
                 } else if (d as i32 / 3) % 2 == 0 {
                     0x1b1b22
                 } else {
@@ -165,7 +267,7 @@ impl PlatterImage {
                 };
             }
         }
-        PlatterImage { r, held, size, px }
+        PlatterImage { r, held, grooves, size, px, veil }
     }
 }
 
@@ -254,6 +356,32 @@ impl Canvas<'_> {
 
 #[cfg(test)]
 mod tests {
+    /// Drawing the record changes exactly the pixels of its circle and leaves everything
+    /// outside it alone, so a background behind the record's corners survives.
+    #[test]
+    fn platter_stays_in_its_circle() {
+        use super::*;
+        let (w, h, r) = (200usize, 180usize, 61.5);
+        let img = PlatterImage::new(r, false, true);
+        let mark = 0x123456;
+        let mut px = vec![mark; w * h];
+        let (cx, cy) = (90, 80);
+        Canvas { px: &mut px, w, h }.platter(cx, cy, &img, 0.7, None, false);
+        let c = r.ceil() as i32;
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                let d = ((x - cx) as f64).hypot((y - cy) as f64);
+                let got = px[y as usize * w + x as usize];
+                if d > r {
+                    assert_eq!(got, mark, "outside the record at {x},{y}");
+                } else {
+                    let want = img.px[(y - cy + c) as usize * img.size + (x - cx + c) as usize];
+                    assert_eq!(got, want, "on the record at {x},{y}");
+                }
+            }
+        }
+    }
+
     /// `ICON_DUMP=path cargo test icon` writes the icon at 256 px as raw ARGB, for looking at.
     #[test]
     fn icon_renders() {

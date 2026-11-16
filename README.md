@@ -195,6 +195,8 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 
 - CUT opens with the key guide hidden, paused, with an empty record on the platter. Press **M** (or **Enter**) to start it: the empty run-out groove plays hiss, crackle and a scuff that ticks once per turn until you load a sample.
 - **H** shows or hides the key guide. **Alt** (pressed and released on its own) or **F10** opens the menu bar, where every command is also listed with its key.
+- **F5** puts your own picture behind everything, and **F6** puts one across the whole record, where it turns with the record. PNG, JPG and WebP work. Press the key again to take the picture away. **F7** dims the background (0% to 80%, 60% to start) so the waveforms stay readable.
+- **F8** turns the record's groove rings on or off, and **F9** the green cue line. Pictures and these choices are saved in `~/.config/cut/settings.txt`, not in profiles.
 - **P** opens profiles: save your current feel and mixer settings under a name, and load them back later (for example one per controller or per routine).
 - **Ctrl+Q** quits. Quitting mid-take finishes the take first, and quitting while recording what's playing saves that recording.
 

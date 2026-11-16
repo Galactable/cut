@@ -1,5 +1,12 @@
 # What's new in CUT
 
+## 0.6.0
+- Your own background. Press **F5** and choose a picture (PNG, JPG or WebP): it fills the window behind the waveforms and the record. **F7** sets how much it's dimmed, from 0% to 80% in steps of 20, so the waveforms and key guide stay easy to read. It starts at 60%.
+- Your own picture on the record. Press **F6** and choose one: it covers the whole record and turns with it, so you can see the spin at a glance.
+- Pressing **F5** or **F6** again takes that picture away; press once more to choose another. Both are remembered for next time.
+- **F8** turns the record's groove rings off, for a plain flat record or a clean picture (with them on, the rings show faintly over your picture), and **F9** turns the green cue line off. Both are on unless you change them.
+- All five are in the View menu and the key guide. With no pictures chosen and nothing switched off, CUT looks exactly as it did.
+
 ## 0.5.0
 - Record what's playing. Press **W** and CUT records whatever your computer is playing: a YouTube video, a film in Plex, anything. Press **W** again and it's on the record, ready to scratch. Drag the top waveform to pick your cut and **S** saves it to the library as usual, so there's no more recording somewhere else, importing and cutting.
 - The silence before and after the sound is trimmed off, so you can press **W** first and then start the video. The whole recording is also kept in a `Captures` folder inside your samples folder.

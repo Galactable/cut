@@ -9,6 +9,7 @@ mod engine;
 mod input;
 mod library;
 mod midi;
+mod pics;
 mod recorder;
 mod text;
 mod ui;
@@ -91,7 +92,16 @@ const MENUS: &[(&str, &[(&str, KeyCode, &str)])] = &[
         ("Volume up", KeyCode::Digit6, "6"),
         ("Record it into takes", KeyCode::KeyU, "U"),
     ]),
-    ("VIEW", &[("Key guide", KeyCode::KeyH, "H"), ("Fullscreen", KeyCode::F11, "F11"), ("What's new", KeyCode::F1, "F1")]),
+    ("VIEW", &[
+        ("Key guide", KeyCode::KeyH, "H"),
+        ("Fullscreen", KeyCode::F11, "F11"),
+        ("Background image...", KeyCode::F5, "F5"),
+        ("Record image...", KeyCode::F6, "F6"),
+        ("Dim background", KeyCode::F7, "F7"),
+        ("Record grooves", KeyCode::F8, "F8"),
+        ("Cue line", KeyCode::F9, "F9"),
+        ("What's new", KeyCode::F1, "F1"),
+    ]),
 ];
 
 const BAR_H: i32 = 34;
@@ -156,8 +166,30 @@ const GUIDE: &[(&str, &str, &[(&str, &str)])] = &[
     ("\u{f130}", "TAKES", &[("R", "record take"), ("E", "WAV / MP3"), ("T", "click on/off"), ("9 0", "BPM (Ctrl = 10)")]),
     ("\u{f028}", "SOUND", &[("V", "vinyl EQ"), ("N", "surface noise")]),
     ("\u{f001}", "BACKING", &[("Y", "load track"), ("B", "play / pause"), ("5 6", "its volume"), ("U", "into takes")]),
-    ("\u{f108}", "APP", &[("Alt / F10", "menu bar"), ("H", "hide keys"), ("P", "profiles"), ("F", "folders"), ("X", "devices"), ("F11", "fullscreen"), ("Ctrl+Q", "quit")]),
+    ("\u{f108}", "APP", &[
+        ("Alt / F10", "menu bar"),
+        ("H", "hide keys"),
+        ("P", "profiles"),
+        ("F", "folders"),
+        ("X", "devices"),
+        ("F5", "background image"),
+        ("F6", "record image"),
+        ("F7", "dim background"),
+        ("F8 F9", "grooves / cue line"),
+        ("F11", "fullscreen"),
+        ("Ctrl+Q", "quit"),
+    ]),
 ];
+
+/// The two places one of your own pictures can go.
+#[derive(Clone, Copy, PartialEq)]
+enum Pic {
+    Background,
+    Record,
+}
+
+/// A picture that finished loading: where it goes, its file, and the picture or why not.
+type PicLoaded = (Pic, PathBuf, Result<pics::Picture, String>);
 
 #[derive(Clone, Copy, PartialEq)]
 enum Which {
@@ -422,6 +454,23 @@ struct App {
 
     /// Recording what the computer is playing (W), until it's stopped and loaded.
     capture: Option<capture::Capture>,
+
+    /// Your own picture behind everything (F5), and the one on the record (F6).
+    bg_pic: Option<pics::Picture>,
+    bg_path: Option<PathBuf>,
+    /// The background at the window's size, already dimmed: (width, height, dim, pixels).
+    bg_cache: Option<(usize, usize, u32, Vec<u32>)>,
+    label_pic: Option<pics::Picture>,
+    label_path: Option<PathBuf>,
+    /// The record's picture at the record's size: (side, pixels).
+    label_cache: Option<(usize, Vec<u32>)>,
+    /// How far the background is faded towards the plain colour, in percent (F7).
+    bg_dim: u32,
+    /// The record's groove rings (F8) and green cue line (F9).
+    grooves: bool,
+    cue_line: bool,
+    pic_tx: mpsc::Sender<PicLoaded>,
+    pic_rx: mpsc::Receiver<PicLoaded>,
 }
 
 impl App {
@@ -467,6 +516,15 @@ impl App {
             self.backing_vol,
             self.backing_in_take
         ));
+        let shown = |p: &Option<PathBuf>| p.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+        text.push_str(&format!(
+            "bg_image={}\nrecord_image={}\nbg_dim={}\ngrooves={}\ncue_line={}\n",
+            shown(&self.bg_path),
+            shown(&self.label_path),
+            self.bg_dim,
+            self.grooves,
+            self.cue_line
+        ));
         if let Some(p) = &self.profile {
             text.push_str(&format!("profile={p}\nprofile_changed={}\n", self.profile_dirty));
         }
@@ -494,6 +552,11 @@ impl App {
                 Some(("backing_volume", v)) => self.backing_vol = v.trim().parse::<f32>().unwrap_or(0.7).clamp(0.0, 1.5),
                 Some(("backing_in_takes", v)) => self.backing_in_take = v.trim() == "true",
                 Some(("takes_dir", v)) if !v.trim().is_empty() => *self.takes_dir.lock().unwrap() = PathBuf::from(v.trim()),
+                Some(("bg_image", v)) if !v.trim().is_empty() => self.bg_path = Some(PathBuf::from(v.trim())),
+                Some(("record_image", v)) if !v.trim().is_empty() => self.label_path = Some(PathBuf::from(v.trim())),
+                Some(("bg_dim", v)) => self.bg_dim = v.trim().parse::<u32>().unwrap_or(60).min(80),
+                Some(("grooves", v)) => self.grooves = v.trim() != "false",
+                Some(("cue_line", v)) => self.cue_line = v.trim() != "false",
                 _ => {}
             }
         }
@@ -856,6 +919,11 @@ impl App {
             KeyCode::KeyV => on(self.eq),
             KeyCode::KeyN => on(self.noise),
             KeyCode::KeyH => on(self.show_guide),
+            KeyCode::F5 => Some(pic_state(&self.bg_path)),
+            KeyCode::F6 => Some(pic_state(&self.label_path)),
+            KeyCode::F7 => Some((format!("{}%", self.bg_dim), WHITE)),
+            KeyCode::F8 => on(self.grooves),
+            KeyCode::F9 => on(self.cue_line),
             KeyCode::KeyT => on(self.click),
             KeyCode::KeyB => Some(match &self.backing {
                 Some(_) if self.backing_on => ("playing".into(), GREEN),
@@ -1712,6 +1780,16 @@ impl App {
             KeyCode::KeyS => self.save_dialog(),
             KeyCode::KeyP => self.open_profile_menu(),
             KeyCode::KeyH => self.show_guide = !self.show_guide,
+            KeyCode::F5 => self.pic_key(Pic::Background),
+            KeyCode::F6 => self.pic_key(Pic::Record),
+            KeyCode::F7 => {
+                self.bg_dim = (self.bg_dim / 20 * 20 + 20) % 100;
+                if self.bg_path.is_none() {
+                    self.say(format!("background dim {}% - F5 chooses a background image", self.bg_dim));
+                }
+            }
+            KeyCode::F8 => self.grooves = !self.grooves,
+            KeyCode::F9 => self.cue_line = !self.cue_line,
             KeyCode::KeyF => self.open_folder_menu(),
             KeyCode::KeyX => self.open_dev_menu(),
             KeyCode::KeyY => self.backing_dialog(),
@@ -1888,6 +1966,92 @@ impl App {
                 (p, src)
             }));
         });
+    }
+
+    /// F5 / F6: choose a picture, or take the current one away.
+    fn pic_key(&mut self, which: Pic) {
+        let (key, name) = match which {
+            Pic::Background => ("F5", "background image"),
+            Pic::Record => ("F6", "record image"),
+        };
+        let had = match which {
+            Pic::Background => {
+                self.bg_pic = None;
+                self.bg_cache = None;
+                self.bg_path.take()
+            }
+            Pic::Record => {
+                self.label_pic = None;
+                self.label_cache = None;
+                self.label_path.take()
+            }
+        };
+        if had.is_some() {
+            self.say(format!("{name} removed - {key} chooses another"));
+            return;
+        }
+        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| ".".into());
+        let other = if which == Pic::Background { &self.label_path } else { &self.bg_path };
+        let start = match other.as_deref().and_then(Path::parent) {
+            Some(d) => d.to_path_buf(),
+            None => Some(home.join("Pictures")).filter(|d| d.is_dir()).unwrap_or(home),
+        };
+        let tx = self.pic_tx.clone();
+        std::thread::spawn(move || {
+            let out = std::process::Command::new("zenity")
+                .args([
+                    "--file-selection",
+                    &format!("--title=Choose a {name}"),
+                    &format!("--filename={}/", start.display()),
+                    "--file-filter=Images | *.png *.PNG *.jpg *.JPG *.jpeg *.JPEG *.webp *.WEBP",
+                    "--file-filter=All files | *",
+                ])
+                .output();
+            let path = out.ok().filter(|o| o.status.success()).map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
+            if let Some(p) = path {
+                let pic = pics::load(&p);
+                let _ = tx.send((which, p, pic));
+            }
+        });
+    }
+
+    /// Loads the last pictures at start-up, in the background.
+    fn reload_pics(&mut self) {
+        for (which, path) in [(Pic::Background, self.bg_path.clone()), (Pic::Record, self.label_path.clone())] {
+            let Some(p) = path.filter(|p| p.is_file()) else { continue };
+            let tx = self.pic_tx.clone();
+            std::thread::spawn(move || {
+                let pic = pics::load(&p);
+                let _ = tx.send((which, p, pic));
+            });
+        }
+    }
+
+    fn pic_loaded(&mut self, which: Pic, path: PathBuf, pic: Result<pics::Picture, String>) {
+        match pic {
+            Ok(pic) => {
+                // Start-up reloads are quiet; only a newly chosen picture is announced.
+                let (slot, old) = match which {
+                    Pic::Background => {
+                        self.bg_cache = None;
+                        (&mut self.bg_pic, self.bg_path.replace(path.clone()))
+                    }
+                    Pic::Record => {
+                        self.label_cache = None;
+                        (&mut self.label_pic, self.label_path.replace(path.clone()))
+                    }
+                };
+                *slot = Some(pic);
+                if old.as_ref() != Some(&path) {
+                    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    let what = if which == Pic::Background { "background image" } else { "record image" };
+                    self.say(format!("{what}: {name}"));
+                    self.save_settings();
+                }
+            }
+            Err(e) => self.say(format!("couldn't load image: {e}")),
+        }
+        self.dirty = true;
     }
 
     /// Loads the last backing track at start-up, paused.
@@ -2180,7 +2344,15 @@ impl App {
     fn paint_with(&mut self, c: &mut Canvas, f: &mut text::Fonts, partial: bool) {
         let (w, h) = (c.w as i32, c.h as i32);
         if !partial {
-            c.fill(BG);
+            if let Some(pic) = &self.bg_pic {
+                let key = (c.w, c.h, self.bg_dim);
+                if self.bg_cache.as_ref().is_none_or(|b| (b.0, b.1, b.2) != key) {
+                    self.bg_cache = Some((c.w, c.h, self.bg_dim, pic.cover(c.w, c.h, self.bg_dim, BG)));
+                }
+                c.px.copy_from_slice(&self.bg_cache.as_ref().unwrap().3);
+            } else {
+                c.fill(BG);
+            }
         }
         let pos = self.shared.pos();
         let speed = self.shared.speed();
@@ -2326,10 +2498,18 @@ impl App {
         self.lay = Layout { overview, platter: (pcx as f64, pcy as f64, pr) };
 
         let angle = pos / rate / SEC_PER_REV * std::f64::consts::TAU;
-        if self.platter_img.as_ref().is_none_or(|p| p.r != pr || p.held != self.hand) {
-            self.platter_img = Some(ui::PlatterImage::new(pr, self.hand));
+        if self.platter_img.as_ref().is_none_or(|p| p.r != pr || p.held != self.hand || p.grooves != self.grooves) {
+            self.platter_img = Some(ui::PlatterImage::new(pr, self.hand, self.grooves));
         }
-        c.platter(pcx, pcy, self.platter_img.as_ref().unwrap(), angle);
+        let img = self.platter_img.as_ref().unwrap();
+        if let Some(pic) = &self.label_pic {
+            let side = img.side();
+            if self.label_cache.as_ref().is_none_or(|l| l.0 != side) {
+                self.label_cache = Some((side, pic.cover(side, side, 0, BG)));
+            }
+        }
+        let art = self.label_cache.as_ref().filter(|_| self.label_pic.is_some()).map(|(_, px)| px.as_slice());
+        c.platter(pcx, pcy, img, angle, art, self.cue_line);
         // Where your finger is on the tablet, with the tablet's centre as the spindle
         // and its half-height (~70 mm) as the platter's edge.
         if let Some(Kind::TabletTouch) = self.direct {
@@ -2694,6 +2874,9 @@ impl ApplicationHandler<InEvent> for App {
                 }
             }
         }
+        while let Ok((which, path, pic)) = self.pic_rx.try_recv() {
+            self.pic_loaded(which, path, pic);
+        }
         if let Some(rx) = &self.backing_rx {
             if let Ok(res) = rx.try_recv() {
                 self.backing_rx = None;
@@ -2734,6 +2917,18 @@ impl ApplicationHandler<InEvent> for App {
         }
         let wait = if changed { 4 } else { 25 };
         el.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(wait)));
+    }
+}
+
+/// A picture's menu state: its file name, or that there isn't one.
+fn pic_state(path: &Option<PathBuf>) -> (String, u32) {
+    match path.as_ref().and_then(|p| p.file_name()) {
+        Some(n) => {
+            let n = n.to_string_lossy();
+            let short: String = n.chars().take(20).collect();
+            (if short.len() < n.len() { format!("{short}..") } else { short }, LILAC)
+        }
+        None => ("none".into(), DIM),
     }
 }
 
@@ -2997,6 +3192,7 @@ fn main() -> anyhow::Result<()> {
     midi::start(el.create_proxy());
 
     let src_len = src.len();
+    let (pic_tx, pic_rx) = mpsc::channel();
     let mut app = App {
         window: None,
         surface: None,
@@ -3093,6 +3289,17 @@ fn main() -> anyhow::Result<()> {
         backing_in_take: false,
         backing_rx: None,
         capture: None,
+        bg_pic: None,
+        bg_path: None,
+        bg_cache: None,
+        label_pic: None,
+        label_path: None,
+        label_cache: None,
+        bg_dim: 60,
+        grooves: true,
+        cue_line: true,
+        pic_tx,
+        pic_rx,
     };
     // Settings used to live in ~/.config/scratchdeck (the app's old name).
     let new_dir = App::settings_path().parent().map(Path::to_path_buf);
@@ -3103,6 +3310,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
     app.load_settings();
+    app.reload_pics();
     app.reload_backing();
     let found_note = if !found.is_empty() {
         format!("direct input: {}", found.join(", "))
