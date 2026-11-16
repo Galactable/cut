@@ -1,3 +1,4 @@
+mod beat;
 mod capture;
 mod cues;
 mod deck;
@@ -11,6 +12,8 @@ mod library;
 mod midi;
 mod pics;
 mod recorder;
+mod tempo;
+mod trainer;
 mod text;
 mod ui;
 
@@ -91,6 +94,12 @@ const MENUS: &[(&str, &[(&str, KeyCode, &str)])] = &[
         ("Volume down", KeyCode::Digit5, "5"),
         ("Volume up", KeyCode::Digit6, "6"),
         ("Record it into takes", KeyCode::KeyU, "U"),
+        ("Tap the beat (start on one)", KeyCode::Slash, "/"),
+        ("Half tempo", KeyCode::Digit7, "7"),
+        ("Double tempo", KeyCode::Digit8, "8"),
+        ("Beats earlier", KeyCode::Semicolon, ";"),
+        ("Beats later", KeyCode::Quote, "'"),
+        ("Detect the beat again", KeyCode::Digit1, "1"),
     ]),
     ("VIEW", &[
         ("Key guide", KeyCode::KeyH, "H"),
@@ -100,6 +109,8 @@ const MENUS: &[(&str, &[(&str, KeyCode, &str)])] = &[
         ("Dim background", KeyCode::F7, "F7"),
         ("Record grooves", KeyCode::F8, "F8"),
         ("Cue line", KeyCode::F9, "F9"),
+        ("Trainer strip", KeyCode::F12, "F12"),
+        ("Freeze trainer strip", KeyCode::Backslash, "\\"),
         ("What's new", KeyCode::F1, "F1"),
     ]),
 ];
@@ -481,7 +492,13 @@ struct App {
     backing_on: bool,
     backing_vol: f32,
     backing_in_take: bool,
-    backing_rx: Option<mpsc::Receiver<Option<(PathBuf, Result<Source, String>)>>>,
+    backing_rx: Option<mpsc::Receiver<Option<(PathBuf, Result<(Source, beat::Analysis), String>)>>>,
+    /// What was heard in the backing track, its beat grid (detected, or corrected by
+    /// hand), and the taps of a tap-along in progress: (track seconds, when).
+    beat: Option<beat::Analysis>,
+    grid: Option<beat::Grid>,
+    taps: Vec<(f64, Instant)>,
+    trainer: trainer::Trainer,
 
     /// Recording what the computer is playing (W), until it's stopped and loaded.
     capture: Option<capture::Capture>,
@@ -956,6 +973,8 @@ impl App {
             KeyCode::F8 => on(self.grooves),
             KeyCode::F9 => on(self.cue_line),
             KeyCode::KeyT => on(self.click),
+            KeyCode::F12 => on(self.trainer.on),
+            KeyCode::Backslash => on(self.trainer.frozen),
             KeyCode::KeyB => Some(match &self.backing {
                 Some(_) if self.backing_on => ("playing".into(), GREEN),
                 Some(_) => ("paused".into(), WHITE),
@@ -976,7 +995,14 @@ impl App {
             KeyCode::BracketLeft | KeyCode::BracketRight => Some((format!("x{:.2}", self.sens[kind]), WHITE)),
             KeyCode::Minus | KeyCode::Equal => Some((format!("{:.0} Hz", self.smooth_hz), WHITE)),
             KeyCode::ArrowUp | KeyCode::ArrowDown => Some((format!("{:.0}%", self.volume * 100.0), WHITE)),
-            KeyCode::Digit9 | KeyCode::Digit0 => Some((format!("{:.0} BPM", self.bpm), WHITE)),
+            KeyCode::Digit9 | KeyCode::Digit0 => Some(match self.grid {
+                Some(g) => (format!("track {:.1} BPM", g.bpm), LILAC),
+                None => (format!("{:.0} BPM", self.bpm), WHITE),
+            }),
+            KeyCode::Slash | KeyCode::Digit7 | KeyCode::Digit8 => Some(match self.grid {
+                Some(g) => (format!("{:.1} BPM", g.bpm), LILAC),
+                None => ("no beat yet".into(), DIM),
+            }),
             KeyCode::KeyR => Some(if self.shared.recording.load(Relaxed) {
                 ("recording".into(), RED)
             } else if self.shared.rec_request.load(Relaxed) {
@@ -1802,6 +1828,9 @@ impl App {
     }
 
     fn handle_command(&mut self, code: KeyCode) {
+        if self.beat_command(code) || self.trainer_command(code) {
+            return;
+        }
         match code {
             KeyCode::KeyM | KeyCode::Enter => {
                 self.motor = !self.motor;
@@ -1861,7 +1890,9 @@ impl App {
                     (true, false) => " - recording the scratch only (U adds the backing track)",
                     _ => "",
                 };
-                if on && self.click {
+                // The free click counts a take in; the track's own beat doesn't need to,
+                // since the track restarts with the take.
+                if on && self.click && !(self.grid.is_some() && self.backing_on) {
                     self.say(format!("take armed - starts on the next bar{what}"));
                 } else if on && !what.is_empty() {
                     self.say(format!("take started{what}"));
@@ -2064,7 +2095,7 @@ impl App {
                 .output();
             let path = out.ok().filter(|o| o.status.success()).map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
             let _ = tx.send(path.map(|p| {
-                let src = deck::load(&p).map_err(|e| format!("{e:#}"));
+                let src = deck::load(&p).map(|s| (beat::Analysis::of(&s), s)).map(|(a, s)| (s, a)).map_err(|e| format!("{e:#}"));
                 (p, src)
             }));
         });
@@ -2162,14 +2193,14 @@ impl App {
         let (tx, rx) = mpsc::channel();
         self.backing_rx = Some(rx);
         std::thread::spawn(move || {
-            let src = deck::load(&p).map_err(|e| format!("{e:#}"));
+            let src = deck::load(&p).map(|s| (beat::Analysis::of(&s), s)).map(|(a, s)| (s, a)).map_err(|e| format!("{e:#}"));
             let _ = tx.send(Some((p, src)));
         });
     }
 
-    fn backing_loaded(&mut self, path: PathBuf, src: Result<Source, String>) {
+    fn backing_loaded(&mut self, path: PathBuf, src: Result<(Source, beat::Analysis), String>) {
         match src {
-            Ok(src) => {
+            Ok((src, found)) => {
                 let name = src.name.clone();
                 let arc = Arc::new(src);
                 self.send(Msg::Backing(Some(arc.clone())));
@@ -2177,7 +2208,10 @@ impl App {
                 self.send(Msg::BackingInTake(self.backing_in_take));
                 self.backing_prev = self.backing.replace(arc);
                 self.backing_path = Some(path);
-                self.say(format!("backing track: {name} - B to play. It restarts with each take"));
+                match self.grid_for_new_backing(found) {
+                    Some(g) => self.say(format!("backing track: {name}, {:.1} BPM - B to play, T for a click on its beat", g.bpm)),
+                    None => self.say(format!("backing track: {name} - B to play. No steady beat found: tap / along with it")),
+                }
                 self.save_settings();
             }
             Err(e) => self.say(format!("couldn't load backing track: {e}")),
@@ -2351,10 +2385,17 @@ impl App {
             let state = if self.backing_on { val(&format!("\u{f04b} {:.0}%", self.backing_vol * 100.0), GREEN) } else { val("paused", DIM) };
             // Whether takes get it too (U), so it's never a surprise afterwards.
             let into = if self.backing_in_take { val("\u{f111} IN TAKES", RED) } else { ("not in takes".to_string(), DIM, false) };
-            left.push((vec![lab("BACKING"), state, into], 7));
+            let mut seg = vec![lab("BACKING"), state];
+            if let Some(g) = self.grid {
+                seg.push(val(&format!("{:.1} BPM", g.bpm), LILAC));
+            }
+            seg.push(into);
+            left.push((seg, 7));
         }
         if self.click {
-            left.push((vec![lab("CLICK"), val(&format!("{:.0}", self.bpm), LILAC)], 4));
+            // On the backing track's own beat while it plays; otherwise the free click.
+            let on_track = self.grid.filter(|_| self.backing_on);
+            left.push((vec![lab("CLICK"), on_track.map_or(val(&format!("{:.0}", self.bpm), LILAC), |_| val("ON THE BEAT", GREEN))], 4));
         }
         let kind = self.sens_kind as usize;
         let ver_text = format!("v{VERSION}");
@@ -2534,9 +2575,17 @@ impl App {
         }
 
         // Scrolling close-up around the needle.
-        let zoom = (12, oy + oh + 8, w - 24, 120.min((h - oy - oh) / 5).max(60));
+        // With the trainer strip on, it takes this place and more of the height.
+        let zoom = if self.trainer.on {
+            (12, oy + oh + 8, w - 24, ((h - oy - oh) * 2 / 5).clamp(100, 300))
+        } else {
+            (12, oy + oh + 8, w - 24, 120.min((h - oy - oh) / 5).max(60))
+        };
         let (zx, zy, zw, zh) = zoom;
         c.rect(zx, zy, zw, zh, PANEL);
+        if self.trainer.on {
+            self.draw_trainer(c, f, zoom);
+        } else {
         let spp = 2.4 * rate / zw as f64;
         let needle = self.rec.cue + pos;
         let zmid = zy + zh / 2;
@@ -2567,6 +2616,7 @@ impl App {
             }
         }
         c.rect(zx + zw / 2 - 1, zy, 2, zh, GREEN);
+        }
         // A held hot cue button fills up beside the needle until its cue is set.
         let mut hy = zy + 4;
         for n in 0..cues::N {
@@ -3020,6 +3070,9 @@ impl ApplicationHandler<InEvent> for App {
         }
         self.drag_autoscroll();
         self.cue_tick();
+        if self.trainer.collect() {
+            self.moved = true;
+        }
         // Keep redrawing while a device row is lit up, so the highlight goes away on time.
         if self.dev_menu.as_ref().is_some_and(|m| m.flash.as_ref().is_some_and(|(_, t)| t.elapsed() < Duration::from_millis(1000))) {
             self.dirty = true;
@@ -3073,6 +3126,7 @@ struct Audio {
     tx: rtrb::Producer<Msg>,
     trash_rx: rtrb::Consumer<Arc<Record>>,
     take_rx: rtrb::Consumer<f32>,
+    trace_rx: rtrb::Consumer<engine::Trace>,
     shared: Arc<Shared>,
     out_rate: u32,
 }
@@ -3092,6 +3146,8 @@ fn open_audio(rec: Arc<Record>) -> anyhow::Result<Audio> {
             let (take_tx, take_rx) = rtrb::RingBuffer::new(out_rate as usize * 4);
             let shared = Arc::new(Shared::default());
             let mut engine = Engine::new(rec.clone(), out_rate as f64, rx, trash_tx, shared.clone(), take_tx);
+            let (trace_tx, trace_rx) = rtrb::RingBuffer::new(engine::TRACE_HZ as usize * 4);
+            engine.trace_to(trace_tx);
             let config = cpal::StreamConfig { channels: channels as u16, sample_rate: cpal::SampleRate(out_rate), buffer_size: cpal::BufferSize::Default };
             let errors = std::sync::atomic::AtomicU32::new(0);
             let stream = device.build_output_stream(
@@ -3106,7 +3162,7 @@ fn open_audio(rec: Arc<Record>) -> anyhow::Result<Audio> {
             )?;
             stream.play()?;
             eprintln!("audio: {} @ {out_rate} Hz via {}", device.name().unwrap_or_default(), id.name());
-            Ok(Audio { stream, tx, trash_rx, take_rx, shared, out_rate })
+            Ok(Audio { stream, tx, trash_rx, take_rx, trace_rx, shared, out_rate })
         };
         match attempt() {
             Ok(a) => return Ok(a),
@@ -3285,6 +3341,9 @@ fn main() -> anyhow::Result<()> {
         let out = args.get(1).map(String::as_str).unwrap_or("render-test.wav");
         return engine::render_test(args.get(2).map(String::as_str), out);
     }
+    if let (Some("--beat"), Some(file)) = (args.first().map(String::as_str), args.get(1)) {
+        return beat::report(file);
+    }
 
     // Ask PipeWire for a small quantum; its default (1024) adds ~20 ms between hand and ear.
     if std::env::var_os("PIPEWIRE_LATENCY").is_none() {
@@ -3298,7 +3357,7 @@ fn main() -> anyhow::Result<()> {
     let rec = Arc::new(deck::build(&src, 0, src.len(), true, false, false));
 
     let audio = open_audio(rec.clone())?;
-    let Audio { stream, tx, trash_rx, take_rx, shared, out_rate } = audio;
+    let Audio { stream, tx, trash_rx, take_rx, trace_rx, shared, out_rate } = audio;
     let take_status = Arc::new(Mutex::new(None));
     let takes_dir = Arc::new(Mutex::new(library::root().join("Takes")));
     let save_mp3 = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -3409,6 +3468,10 @@ fn main() -> anyhow::Result<()> {
         backing_vol: 0.7,
         backing_in_take: false,
         backing_rx: None,
+        beat: None,
+        grid: None,
+        taps: Vec::new(),
+        trainer: trainer::Trainer::new(trace_rx),
         capture: None,
         bg_pic: None,
         bg_path: None,

@@ -35,6 +35,37 @@ pub enum Msg {
     /// Silence the output (takes aren't affected): CUT keeps itself out of a recording of
     /// what the computer is playing.
     Mute(bool),
+    /// The backing track's beats: (samples per beat, sample of a bar's first beat), in
+    /// the track's own samples. While it plays, the click follows these.
+    Grid(Option<(f64, f64)>),
+}
+
+/// How often the engine logs where the record is, per second.
+pub const TRACE_HZ: u32 = 400;
+
+/// One moment of your playing, for the trainer strip.
+#[derive(Clone, Copy, Debug)]
+pub struct Trace {
+    /// Output samples since the engine started.
+    pub frame: u64,
+    /// Where the needle is, in seconds of the sample from the cue.
+    pub pos: f32,
+    /// The beat it happened on: the backing track's while it plays, otherwise the
+    /// click's. Counts up by one per beat (whole numbers are on the beat, multiples of
+    /// four start a bar); not a number when neither is running.
+    pub beat: f64,
+    flags: u8,
+}
+
+impl Trace {
+    /// Your hand is on the record.
+    pub fn hand(&self) -> bool {
+        self.flags & 1 != 0
+    }
+    /// The fader is open.
+    pub fn open(&self) -> bool {
+        self.flags & 2 != 0
+    }
 }
 
 #[derive(Default)]
@@ -42,6 +73,8 @@ pub struct Shared {
     pos: AtomicU64,
     speed: AtomicU64,
     pub level: AtomicU32,
+    /// Where the backing track is, in its own samples.
+    backing_pos: AtomicU64,
     /// What the UI wants; the engine starts the take (on the next bar if the click is on).
     pub rec_request: AtomicBool,
     /// Whether the engine is actually writing take audio.
@@ -69,6 +102,9 @@ impl Shared {
     }
     pub fn speed(&self) -> f64 {
         f64::from_bits(self.speed.load(Relaxed))
+    }
+    pub fn backing_pos(&self) -> f64 {
+        f64::from_bits(self.backing_pos.load(Relaxed))
     }
 }
 
@@ -130,6 +166,10 @@ pub struct Engine {
     backing_in_take: bool,
     /// Position in the backing track's own samples, and its samples per output sample.
     backing_pos: f64,
+    grid: Option<(f64, f64)>,
+    /// The log of your playing, when something is listening.
+    trace: Option<Producer<Trace>>,
+    frames: u64,
 }
 
 impl Engine {
@@ -185,8 +225,16 @@ impl Engine {
             backing_vol: 0.7,
             backing_in_take: false,
             backing_pos: 0.0,
+            grid: None,
+            trace: None,
+            frames: 0,
             rec_frames: 0,
         }
+    }
+
+    /// Logs your playing to `tx` from now on.
+    pub fn trace_to(&mut self, tx: Producer<Trace>) {
+        self.trace = Some(tx);
     }
 
     fn hand_target(&self) -> f64 {
@@ -268,6 +316,7 @@ impl Engine {
             Msg::BackingVolume(v) => self.backing_vol = v,
             Msg::BackingInTake(on) => self.backing_in_take = on,
             Msg::Mute(on) => self.out_target = if on { 0.0 } else { 1.0 },
+            Msg::Grid(g) => self.grid = g.filter(|(per, _)| *per >= 1.0),
         }
     }
 
@@ -286,12 +335,28 @@ impl Engine {
         }
         let beat_len = self.out_rate * 60.0 / self.bpm;
         let click_decay = (-dt / 0.025).exp() as f32;
+        let trace_every = ((self.out_rate / TRACE_HZ as f64) as u64).max(1);
         let mut peak = 0f32;
+        // With a beat grid and the backing track playing, the click is the track's own
+        // beat instead of a free-running one.
+        let locked = match (&self.backing, self.grid) {
+            (Some(b), Some((per, first))) if self.click_on && self.backing_on && b.l.len() > 1 => Some((per, first, b.rate as f64 * dt)),
+            _ => None,
+        };
 
         for frame in out.chunks_mut(ch) {
             // Metronome, and starting a requested take on a downbeat.
-            let mut downbeat = !self.click_on;
-            if self.click_on {
+            let mut downbeat = !self.click_on || locked.is_some();
+            if let Some((per, first, step)) = locked {
+                // The beat that falls inside this output sample, if any.
+                let k = ((self.backing_pos - first) / per).ceil();
+                if first + k * per < self.backing_pos + step {
+                    let one = (k as i64).rem_euclid(4) == 0;
+                    self.click_hz = if one { 2000.0 } else { 1400.0 };
+                    self.click_env = if one { 0.35 } else { 0.22 };
+                    self.click_ph = 0.0;
+                }
+            } else if self.click_on {
                 self.beat_phase += 1.0;
                 if self.beat_phase >= beat_len {
                     self.beat_phase = if self.beat_phase == f64::MAX { 0.0 } else { self.beat_phase - beat_len };
@@ -409,6 +474,18 @@ impl Engine {
                 *x = 0.0;
             }
             peak = peak.max(ml.abs()).max(mr.abs());
+            self.frames += 1;
+            if self.frames % trace_every == 0 {
+                if let Some(tx) = &mut self.trace {
+                    let beat = match (&self.backing, self.grid) {
+                        (Some(_), Some((per, first))) if self.backing_on => (self.backing_pos - first) / per,
+                        _ if self.click_on && self.beat_phase <= beat_len => self.beat as f64 + self.beat_phase / beat_len,
+                        _ => f64::NAN,
+                    };
+                    let flags = self.hand as u8 | ((self.fader > 0.5) as u8) << 1;
+                    let _ = tx.push(Trace { frame: self.frames, pos: ((self.p - self.rec.cue) / rate) as f32, beat, flags });
+                }
+            }
             if self.recording && self.take.slots() >= 2 {
                 let (tl, tr) = if self.backing_in_take { (ml, mr) } else { (ol, or) };
                 let _ = self.take.push(tl);
@@ -420,6 +497,7 @@ impl Engine {
         self.shared.recording.store(self.recording, Relaxed);
         self.shared.rec_frames.store(self.rec_frames, Relaxed);
         self.shared.pos.store((self.p - self.rec.cue).to_bits(), Relaxed);
+        self.shared.backing_pos.store(self.backing_pos.to_bits(), Relaxed);
         self.shared.speed.store((self.vel / rate).to_bits(), Relaxed);
         let old = f32::from_bits(self.shared.level.load(Relaxed));
         self.shared.level.store(peak.max(old * 0.9).to_bits(), Relaxed);
@@ -580,6 +658,60 @@ mod tests {
         while let Ok(x) = take.pop() {
             assert!((x - 0.5).abs() < 1e-3, "with U on, the take is the full mix");
         }
+    }
+
+    #[test]
+    fn click_follows_the_backing_tracks_beats() {
+        let (mut eng, mut tx, _take, _shared) = setup();
+        // A silent backing track, so the only sound is the click.
+        let quiet = Arc::new(Source { l: vec![0.0; 48000], r: vec![0.0; 48000], rate: 48000, name: "beat".into() });
+        let _ = tx.push(Msg::Backing(Some(quiet)));
+        let _ = tx.push(Msg::BackingPlay(true));
+        let _ = tx.push(Msg::Metronome(true));
+        // Beats every 12000 samples, the first at 3000.
+        let _ = tx.push(Msg::Grid(Some((12000.0, 3000.0))));
+        let mut out = vec![0.0f32; 48000 * 2];
+        eng.process(&mut out, 2);
+        let mut starts = Vec::new();
+        let mut quiet_for = 1000;
+        for (i, f) in out.chunks(2).enumerate() {
+            if f[0].abs() > 1e-3 {
+                if quiet_for >= 1000 {
+                    starts.push(i);
+                }
+                quiet_for = 0;
+            } else {
+                quiet_for += 1;
+            }
+        }
+        assert_eq!(starts.len(), 4, "one click per beat: {starts:?}");
+        for (i, s) in starts.iter().enumerate() {
+            let want = 3000 + i * 12000;
+            assert!(s.abs_diff(want) <= 3, "click {i} at {s}, beat at {want}");
+        }
+    }
+
+    #[test]
+    fn playing_is_logged_against_the_backing_tracks_beat() {
+        let (mut eng, mut tx, _take, _shared) = setup();
+        let (trace_tx, mut trace_rx) = rtrb::RingBuffer::new(1024);
+        eng.trace_to(trace_tx);
+        let _ = tx.push(Msg::Backing(Some(backing())));
+        let _ = tx.push(Msg::BackingPlay(true));
+        let _ = tx.push(Msg::Grid(Some((24000.0, 0.0))));
+        let _ = tx.push(Msg::HandDown { t: 0 });
+        let mut out = vec![0.0f32; 36000 * 2];
+        eng.process(&mut out, 2);
+        let mut log = Vec::new();
+        while let Ok(p) = trace_rx.pop() {
+            log.push(p);
+        }
+        assert_eq!(log.len(), TRACE_HZ as usize * 3 / 4);
+        assert!(log.iter().all(|p| p.hand() && p.open()));
+        // Three quarters of a second of a track with a beat every half second.
+        let last = log.last().unwrap();
+        assert_eq!(last.frame, 36000);
+        assert!((last.beat - 1.5).abs() < 1e-3, "beat {}", last.beat);
     }
 
     #[test]
