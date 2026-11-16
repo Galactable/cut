@@ -2,7 +2,7 @@
 # Kept in github.com/Galactable/cut under packaging/aur; packaging/aur/update.sh bumps it per release.
 pkgname=cut-deck
 pkgver=0.6.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Vinyl scratch deck: scratch samples over a backing track with a touchpad, tablet or MIDI DJ controller, and record takes"
 arch=('x86_64')
 url="https://github.com/Galactable/cut"
