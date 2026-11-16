@@ -13,11 +13,12 @@ use crate::ui::{mix, Canvas, DIM, GREEN, LILAC, PANEL, WHITE};
 use crate::{App, LABEL_TEXT};
 
 /// How much history is kept, in seconds.
-const KEEP_SECS: usize = 30;
-/// Beats across the strip (when there's a beat to go by; otherwise it shows 5 seconds).
-const BEATS_SHOWN: f64 = 8.0;
-/// Where the now line sits, as a share of the width. Well to the right for now, so
-/// most of the strip is what you just played.
+const KEEP_SECS: usize = 60;
+/// The choices for beats across the strip (when there's a beat to go by; otherwise it
+/// shows 5 seconds).
+const ZOOMS: [u32; 4] = [4, 8, 16, 32];
+/// Where the now line sits, as a share of the width: well to the right, so most of the
+/// strip is what you just played.
 const NOW_AT: f64 = 0.8;
 /// The least the strip's height ever covers, in seconds of the sample.
 const MIN_SPAN: f64 = 0.25;
@@ -33,11 +34,13 @@ pub struct Trainer {
     pts: VecDeque<Trace>,
     /// The part of the sample the strip's height covers, in seconds from the cue.
     range: (f64, f64),
+    /// Beats across the strip.
+    pub beats: u32,
 }
 
 impl Trainer {
     pub fn new(rx: Consumer<Trace>) -> Self {
-        Trainer { on: false, frozen: false, rx, pts: VecDeque::new(), range: (-0.02, MIN_SPAN) }
+        Trainer { on: false, frozen: false, rx, pts: VecDeque::new(), range: (-0.02, MIN_SPAN), beats: 8 }
     }
 
     /// Takes in what the engine logged. True when there's something new to draw.
@@ -72,6 +75,12 @@ impl App {
                 self.trainer.frozen = !self.trainer.frozen;
                 self.say(if self.trainer.frozen { "strip frozen - \\ carries on" } else { "strip running" });
             }
+            KeyCode::Backquote if self.trainer.on => {
+                let t = &mut self.trainer;
+                let i = ZOOMS.iter().position(|&z| z == t.beats).unwrap_or(0);
+                t.beats = ZOOMS[(i + 1) % ZOOMS.len()];
+                self.say(format!("strip shows {} beats", self.trainer.beats));
+            }
             _ => return false,
         }
         true
@@ -81,7 +90,7 @@ impl App {
         let rate = self.out_rate as f64;
         // The beat to draw against: the backing track's while it plays, else the click's.
         let period = self.grid.filter(|_| self.backing_on).map(|g| g.period()).or(self.click.then(|| 60.0 / self.bpm));
-        let pps = w as f64 / period.map_or(5.0, |p| p * BEATS_SHOWN);
+        let pps = w as f64 / period.map_or(5.0, |p| p * self.trainer.beats as f64);
         let now_x = x as f64 + w as f64 * NOW_AT;
         let (left, right) = (x as f64, (x + w) as f64);
         let t = &mut self.trainer;

@@ -109,9 +109,12 @@ const MENUS: &[(&str, &[(&str, KeyCode, &str)])] = &[
         ("Dim background", KeyCode::F7, "F7"),
         ("Record grooves", KeyCode::F8, "F8"),
         ("Cue line", KeyCode::F9, "F9"),
-        ("Trainer strip", KeyCode::F12, "F12"),
-        ("Freeze trainer strip", KeyCode::Backslash, "\\"),
         ("What's new", KeyCode::F1, "F1"),
+    ]),
+    ("TRAINER", &[
+        ("Trainer strip", KeyCode::F12, "F12"),
+        ("Freeze the strip", KeyCode::Backslash, "\\"),
+        ("Zoom the strip", KeyCode::Backquote, "`"),
     ]),
 ];
 
@@ -975,6 +978,7 @@ impl App {
             KeyCode::KeyT => on(self.click),
             KeyCode::F12 => on(self.trainer.on),
             KeyCode::Backslash => on(self.trainer.frozen),
+            KeyCode::Backquote => Some((format!("{} beats", self.trainer.beats), WHITE)),
             KeyCode::KeyB => Some(match &self.backing {
                 Some(_) if self.backing_on => ("playing".into(), GREEN),
                 Some(_) => ("paused".into(), WHITE),
