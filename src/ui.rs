@@ -104,9 +104,10 @@ impl Canvas<'_> {
         }
     }
 
-    /// Copies the pre-drawn record in at (cx, cy), then on top: your picture across the
-    /// whole record (`art`: a square of `img.side()` pixels each way) and the cue line,
-    /// both turned to `angle` (radians, 0 = 12 o'clock). Only the record's own circle is
+    /// Copies the pre-drawn record in at (cx, cy), then on top: your picture (`art`: a
+    /// square of `img.side()` pixels each way, showing across the whole record or only on
+    /// its label, as `img` was made) and the cue line, both turned to `angle` (radians,
+    /// 0 = 12 o'clock). Only the record's own circle is
     /// touched, so whatever is behind its corners stays.
     pub fn platter(&mut self, cx: i32, cy: i32, img: &PlatterImage, angle: f64, art: Option<&[u32]>, cue: bool) {
         let half = img.size as i32 / 2;
@@ -133,7 +134,7 @@ impl Canvas<'_> {
                 });
             }
         }
-        let (r, label) = (img.r, img.r * 0.33);
+        let (r, label) = (img.r, img.r * LABEL_PART);
         if cue {
             let a = angle - std::f64::consts::FRAC_PI_2;
             let (s, co) = a.sin_cos();
@@ -207,18 +208,22 @@ fn lerp256(a: u32, b: u32, f: u32) -> u32 {
     (rb & 0xff00ff) | (g & 0x00ff00)
 }
 
+/// The label's radius, as a part of the record's.
+const LABEL_PART: f64 = 0.33;
 /// In a record's veil: your picture doesn't show here (rim, spindle, outside the record).
 const NO_ART: u8 = 255;
 /// How much the two groove rings darken your picture, out of 256.
 const GROOVE_VEIL: (u8, u8) = (30, 78);
 
 /// The record without its cue line: grooves, label, rim. It looks the same at every
-/// angle, so it's drawn once per size (and hand-on rim colour, and grooves on or off)
-/// and copied each frame.
+/// angle, so it's drawn once per size (and hand-on rim colour, grooves on or off, and
+/// where a picture goes) and copied each frame.
 pub struct PlatterImage {
     pub r: f64,
     pub held: bool,
     pub grooves: bool,
+    /// A picture shows only on the label, not across the whole record.
+    pub label_art: bool,
     size: usize,
     px: Vec<u32>,
     /// For a picture on the record: how much each pixel darkens it (the groove rings), or
@@ -232,10 +237,15 @@ impl PlatterImage {
         self.size
     }
 
-    pub fn new(r: f64, held: bool, grooves: bool) -> Self {
+    /// The side of the square that covers just the label, centred in the one above.
+    pub fn label_side(&self) -> usize {
+        2 * (self.r * LABEL_PART).ceil() as usize + 1
+    }
+
+    pub fn new(r: f64, held: bool, grooves: bool, label_art: bool) -> Self {
         let c = r.ceil() as i32;
         let size = (2 * c + 1) as usize;
-        let label = r * 0.33;
+        let label = r * LABEL_PART;
         let mut px = vec![BG; size * size];
         let mut veil = vec![NO_ART; size * size];
         for iy in 0..size {
@@ -244,7 +254,12 @@ impl PlatterImage {
                 if d > r {
                     continue;
                 }
-                if d >= 4.0 && d <= r - 3.0 {
+                if label_art {
+                    // Inside the label's thin rim, with nothing over the picture.
+                    if d >= 4.0 && d <= label - 2.0 {
+                        veil[iy * size + ix] = 0;
+                    }
+                } else if d >= 4.0 && d <= r - 3.0 {
                     veil[iy * size + ix] = match (grooves, (d as i32 / 3) % 2 == 0) {
                         (false, _) => 0,
                         (true, true) => GROOVE_VEIL.0,
@@ -267,7 +282,7 @@ impl PlatterImage {
                 };
             }
         }
-        PlatterImage { r, held, grooves, size, px, veil }
+        PlatterImage { r, held, grooves, label_art, size, px, veil }
     }
 }
 
@@ -362,7 +377,7 @@ mod tests {
     fn platter_stays_in_its_circle() {
         use super::*;
         let (w, h, r) = (200usize, 180usize, 61.5);
-        let img = PlatterImage::new(r, false, true);
+        let img = PlatterImage::new(r, false, true, false);
         let mark = 0x123456;
         let mut px = vec![mark; w * h];
         let (cx, cy) = (90, 80);

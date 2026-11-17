@@ -195,7 +195,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 
 - CUT opens with the key guide hidden, paused, with an empty record on the platter. Press **M** (or **Enter**) to start it: the empty run-out groove plays hiss, crackle and a scuff that ticks once per turn until you load a sample.
 - **H** shows or hides the key guide. **Alt** (pressed and released on its own) or **F10** opens the menu bar, where every command is also listed with its key.
-- **F5** puts your own picture behind everything, and **F6** puts one across the whole record, where it turns with the record. PNG, JPG and WebP work. Press the key again to take the picture away. **F7** dims the background (0% to 80%, 60% to start) so the waveforms stay readable.
+- **F5** puts your own picture behind everything, and **F6** puts one on the record, where it turns with the record. **2** switches it between the whole record and just the label in the middle. PNG, JPG and WebP work. Press **F5** or **F6** again to take the picture away. **F7** dims the background (0% to 80%, 60% to start) so the waveforms stay readable.
 - **F8** turns the record's groove rings on or off, and **F9** the green cue line. Pictures and these choices are saved in `~/.config/cut/settings.txt`, not in profiles.
 - **P** opens profiles: save your current feel and mixer settings under a name, and load them back later (for example one per controller or per routine).
 - **Ctrl+Q** quits. Quitting mid-take finishes the take first, and quitting while recording what's playing saves that recording.
@@ -214,7 +214,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 - **,** and **.** step to the previous and next sample in the same folder.
 - **W** records whatever the computer is playing and puts it on the record: see [Sample from a video or film](#sample-from-a-video-or-film-w). Recordings are kept in `<samples folder>/Captures`.
 - **R** starts or stops a take of CUT's own output (after the fader and volume; never the click or other apps, and the backing track only if you press **U**), saved to the takes folder (default `~/Music/CUT/Takes`). Takes are 32-bit float WAV; **E** switches saved sections and takes to 320 kbps MP3. The file is saved as you go, so a crash or a forced quit mid-take keeps everything up to the last half second. A take that stays completely silent (motor off, or the fader cut the whole time) isn't kept.
-- **T** turns on the click, and **9** / **0** change the BPM (hold Ctrl for steps of 10). With the click on, a take starts on the next bar, so it lines up when you drop it at a bar in FL. The click is never recorded.
+- **T** turns on the click, and **9** / **0** change the BPM (hold Ctrl for steps of 10). With the click on, a take starts on the next bar, so it lines up when you drop it at a bar in FL. The click is never recorded. With a backing track loaded, the click and these keys follow the track's beat instead: see [The beat](#the-beat).
 
 ## Backing track
 
@@ -226,15 +226,41 @@ A backing track is a beat or song that plays under the record while you scratch.
 | **B** | Play or pause it (loads one first if none is loaded) |
 | **5** / **6** | Its volume down / up, separate from the record's |
 | **U** | Record it into takes too (off: takes are the scratch alone) |
+| **/** | Tap the beat, starting on beat one |
+| **7** / **8** | Half / double tempo |
+| **;** / **'** | Beats 5 ms earlier / later (with Ctrl: a whole beat) |
+| **9** / **0** | The track's tempo down / up by 0.1 BPM (with Ctrl: 1) |
+| **1** | Detect the beat again, dropping your corrections |
 
 - **It's not on the crossfader.** Cuts, transforms and flares only cut the record, like a real mixer with the beat on the other channel.
 - **It loops,** so a short loop or a long song both work.
 - **It restarts when a take starts.** The moment recording begins, the backing track jumps to its start, so every take begins at the same point in the beat. In your DAW, line the take up with the start of the beat and you're done.
-- **With the click on** (**T**), recording waits for the next bar, and the backing track restarts on that same bar. Set the click to the beat's tempo with **9** / **0** if you want to hear it count you in.
+- **With the click on** (**T**) and the track paused, recording waits for the next bar, and the backing track restarts on that same bar. While the track is playing with its beat found, the take starts straight away, since the track restarts with it.
 - **Takes are the scratch alone by default,** clean for mixing. Press **U** for the full mix instead. The status bar always shows which: **IN TAKES** (red) or *not in takes* next to BACKING, and **scratch + backing** or *scratch only* next to REC while you record.
 - **The status bar** shows **BACKING** with its volume while it plays (or *paused*), and whether it's going into takes.
 - **It's remembered:** next time you open CUT, the last backing track is loaded again, paused.
 - **Put it on a controller:** under **X**, pick any device and give "Backing track play/pause" a button.
+
+### The beat
+
+- **CUT finds the track's beat when it loads:** its tempo and where its bars start. The status bar shows the BPM next to BACKING.
+- **The click follows it.** While the backing track plays, **T** clicks on the track's own beat, and the status bar says **CLICK ON THE BEAT**. With the track paused, the click runs free at its own BPM.
+- **If the beat is wrong, tap it.** Play the track and tap **/** on the beat, starting on beat one. From the fourth tap the beat follows your taps.
+- **Small fixes:** **7** and **8** halve and double the tempo (for when CUT hears it twice as fast or slow), **;** and **'** slide the beats 5 ms earlier or later, and with Ctrl a whole beat, which changes which beat counts as one. **9** and **0** fine-tune the tempo.
+- **1** throws your corrections away and goes back to what CUT found.
+- **Corrections are remembered per track,** in `~/.config/cut/beats.txt`.
+
+## Trainer strip
+
+**F12** swaps the lower waveform for the trainer strip: a moving picture of your scratching against the beat, so you can see whether your scratches land where you meant them to.
+
+- **Time runs right to left** past the green "now" line, which sits towards the right so most of the strip is what you just played. The lines ahead of it are the beats that are coming.
+- **Height is where the record is in the sample.** A forward stroke climbs, a pull back falls, and the faint green line marked *cue* is the start of your section.
+- **The upright lines are the beats:** each bar's first beat is brightest, then the other beats, then the faint "and" between them. They're the backing track's beats while it plays, otherwise the click's. With neither running there's no beat to draw, and the strip says so.
+- **The line's colour is what was happening:** green while your hand is on the record, lilac while it plays by itself, grey while the fader is closed.
+- **A white dot marks every change of direction.** Those are what should land on the beat lines.
+- **Backslash** freezes the strip so you can study it, and carries on when pressed again. **Backtick** (the key under Esc) changes how much it shows: 4, 8, 16 or 32 beats.
+- All three are in the View menu.
 
 ## Version and what's new
 

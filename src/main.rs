@@ -106,15 +106,14 @@ const MENUS: &[(&str, &[(&str, KeyCode, &str)])] = &[
         ("Fullscreen", KeyCode::F11, "F11"),
         ("Background image...", KeyCode::F5, "F5"),
         ("Record image...", KeyCode::F6, "F6"),
+        ("Record image covers", KeyCode::Digit2, "2"),
         ("Dim background", KeyCode::F7, "F7"),
         ("Record grooves", KeyCode::F8, "F8"),
         ("Cue line", KeyCode::F9, "F9"),
-        ("What's new", KeyCode::F1, "F1"),
-    ]),
-    ("TRAINER", &[
         ("Trainer strip", KeyCode::F12, "F12"),
         ("Freeze the strip", KeyCode::Backslash, "\\"),
         ("Zoom the strip", KeyCode::Backquote, "`"),
+        ("What's new", KeyCode::F1, "F1"),
     ]),
 ];
 
@@ -179,7 +178,7 @@ const GUIDE: &[(&str, &str, &[(&str, &str)])] = &[
     ]),
     ("\u{f130}", "TAKES", &[("R", "record take"), ("E", "WAV / MP3"), ("T", "click on/off"), ("9 0", "BPM (Ctrl = 10)")]),
     ("\u{f028}", "SOUND", &[("V", "vinyl EQ"), ("N", "surface noise")]),
-    ("\u{f001}", "BACKING", &[("Y", "load track"), ("B", "play / pause"), ("5 6", "its volume"), ("U", "into takes")]),
+    ("\u{f001}", "BACKING", &[("Y", "load track"), ("B", "play / pause"), ("5 6", "its volume"), ("U", "into takes"), ("/", "tap the beat"), ("F12", "trainer strip"), ("\\ `", "freeze / zoom strip")]),
     ("\u{f108}", "APP", &[
         ("Alt / F10", "menu bar"),
         ("H", "hide keys"),
@@ -187,7 +186,7 @@ const GUIDE: &[(&str, &str, &[(&str, &str)])] = &[
         ("F", "folders"),
         ("X", "devices"),
         ("F5", "background image"),
-        ("F6", "record image"),
+        ("F6 2", "record image / on label"),
         ("F7", "dim background"),
         ("F8 F9", "grooves / cue line"),
         ("F11", "fullscreen"),
@@ -515,6 +514,8 @@ struct App {
     label_path: Option<PathBuf>,
     /// The record's picture at the record's size: (side, pixels).
     label_cache: Option<(usize, Vec<u32>)>,
+    /// The record's picture sits on just the label (2), not across the whole record.
+    label_only: bool,
     /// How far the background is faded towards the plain colour, in percent (F7).
     bg_dim: u32,
     /// The record's groove rings (F8) and green cue line (F9).
@@ -569,9 +570,10 @@ impl App {
         ));
         let shown = |p: &Option<PathBuf>| p.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
         text.push_str(&format!(
-            "bg_image={}\nrecord_image={}\nbg_dim={}\ngrooves={}\ncue_line={}\n",
+            "bg_image={}\nrecord_image={}\nrecord_image_on={}\nbg_dim={}\ngrooves={}\ncue_line={}\n",
             shown(&self.bg_path),
             shown(&self.label_path),
+            if self.label_only { "label" } else { "record" },
             self.bg_dim,
             self.grooves,
             self.cue_line
@@ -605,6 +607,7 @@ impl App {
                 Some(("takes_dir", v)) if !v.trim().is_empty() => *self.takes_dir.lock().unwrap() = PathBuf::from(v.trim()),
                 Some(("bg_image", v)) if !v.trim().is_empty() => self.bg_path = Some(PathBuf::from(v.trim())),
                 Some(("record_image", v)) if !v.trim().is_empty() => self.label_path = Some(PathBuf::from(v.trim())),
+                Some(("record_image_on", v)) => self.label_only = v.trim() == "label",
                 Some(("bg_dim", v)) => self.bg_dim = v.trim().parse::<u32>().unwrap_or(60).min(80),
                 Some(("grooves", v)) => self.grooves = v.trim() != "false",
                 Some(("cue_line", v)) => self.cue_line = v.trim() != "false",
@@ -972,6 +975,7 @@ impl App {
             KeyCode::KeyH => on(self.show_guide),
             KeyCode::F5 => Some(pic_state(&self.bg_path)),
             KeyCode::F6 => Some(pic_state(&self.label_path)),
+            KeyCode::Digit2 => Some((if self.label_only { "label".into() } else { "whole record".into() }, WHITE)),
             KeyCode::F7 => Some((format!("{}%", self.bg_dim), WHITE)),
             KeyCode::F8 => on(self.grooves),
             KeyCode::F9 => on(self.cue_line),
@@ -1919,6 +1923,13 @@ impl App {
             KeyCode::KeyH => self.show_guide = !self.show_guide,
             KeyCode::F5 => self.pic_key(Pic::Background),
             KeyCode::F6 => self.pic_key(Pic::Record),
+            KeyCode::Digit2 => {
+                self.label_only = !self.label_only;
+                self.label_cache = None;
+                let place = if self.label_only { "on the label" } else { "across the whole record" };
+                let hint = if self.label_path.is_none() { " - F6 chooses one" } else { "" };
+                self.say(format!("record image {place}{hint}"));
+            }
             KeyCode::F7 => {
                 self.bg_dim = (self.bg_dim / 20 * 20 + 20) % 100;
                 if self.bg_path.is_none() {
@@ -2669,14 +2680,15 @@ impl App {
         self.lay = Layout { overview, platter: (pcx as f64, pcy as f64, pr) };
 
         let angle = pos / rate / SEC_PER_REV * std::f64::consts::TAU;
-        if self.platter_img.as_ref().is_none_or(|p| p.r != pr || p.held != self.hand || p.grooves != self.grooves) {
-            self.platter_img = Some(ui::PlatterImage::new(pr, self.hand, self.grooves));
+        if self.platter_img.as_ref().is_none_or(|p| p.r != pr || p.held != self.hand || p.grooves != self.grooves || p.label_art != self.label_only) {
+            self.platter_img = Some(ui::PlatterImage::new(pr, self.hand, self.grooves, self.label_only));
         }
         let img = self.platter_img.as_ref().unwrap();
         if let Some(pic) = &self.label_pic {
             let side = img.side();
             if self.label_cache.as_ref().is_none_or(|l| l.0 != side) {
-                self.label_cache = Some((side, pic.cover(side, side, 0, BG)));
+                let px = if self.label_only { pic.cover_middle(side, img.label_side(), BG) } else { pic.cover(side, side, 0, BG) };
+                self.label_cache = Some((side, px));
             }
         }
         let art = self.label_cache.as_ref().filter(|_| self.label_pic.is_some()).map(|(_, px)| px.as_slice());
@@ -3483,6 +3495,7 @@ fn main() -> anyhow::Result<()> {
         label_pic: None,
         label_path: None,
         label_cache: None,
+        label_only: false,
         bg_dim: 60,
         grooves: true,
         cue_line: true,

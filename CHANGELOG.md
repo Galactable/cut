@@ -1,5 +1,13 @@
 # What's new in CUT
 
+## 0.7.0
+- The trainer strip. Press **F12** and the lower waveform becomes a picture of your scratching against the beat: time runs right to left past a green "now" line, height is where the record is in the sample, and the upright lines are the beats, with each bar's first beat brightest. The line is green while your hand is on the record, lilac while it plays by itself and grey while the fader is closed, and a white dot marks every change of direction, so you can see whether your scratches land on the beat.
+- **Backslash** freezes the strip so you can look at what you just played, and **backtick** (the key under Esc) changes how much it shows: 4, 8, 16 or 32 beats. All three are in the View menu.
+- CUT finds the backing track's beat. When a backing track loads, its tempo and where its bars start are worked out, and the status bar shows its BPM next to BACKING.
+- The click follows the track. While the backing track plays, **T** clicks on the track's own beat (the status bar says CLICK ON THE BEAT) with nothing to set. With the track paused it's the free click at your own BPM, as before.
+- When the beat is found wrong, fix it by hand: play the track and tap **/** on the beat, starting on beat one (it follows you from the fourth tap); **7** and **8** halve and double the tempo; **;** and **'** move the beats 5 ms earlier or later (with Ctrl, a whole beat, to change which beat is one); **9** and **0** fine-tune the track's tempo by 0.1 BPM (with Ctrl, 1). **1** goes back to what CUT found. Your corrections are remembered for each track. They're all in the Backing menu.
+- A picture on just the label. **2** switches your record picture (**F6**) between the whole record and only the label in the middle, with the grooves around it as usual. It's in the View menu as "Record image covers" and is remembered. It starts on the whole record, as before.
+
 ## 0.6.1
 - Long files no longer freeze the window. Loading a file, and picking a long section of it (**A** for the whole sample, a long drag, or switching EQ, noise or loop), now happens in the background: the window stays live and what's on the record keeps playing until the new one is ready.
 - A loading indicator. While that's going on, a green box over the waveform says "loading" with the file's name, or "pressing the record", with moving dots and a count of seconds.

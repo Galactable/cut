@@ -74,6 +74,19 @@ impl Picture {
         }
         out
     }
+
+    /// A square `side` each way, plain `around` except for the middle `inner` x `inner`,
+    /// which the picture fills: for a picture on just the record's label.
+    pub fn cover_middle(&self, side: usize, inner: usize, around: u32) -> Vec<u32> {
+        let inner = inner.min(side);
+        let small = self.cover(inner, inner, 0, around);
+        let mut out = vec![around; side * side];
+        let off = (side - inner) / 2;
+        for (y, row) in small.chunks(inner).enumerate() {
+            out[(y + off) * side + off..][..inner].copy_from_slice(row);
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -111,11 +124,27 @@ mod tests {
         assert_eq!(pic.cover(8, 8, 100, 0x0e0e12)[0], 0x0e0e12);
         assert_eq!(pic.cover(8, 8, 50, 0)[0], 0x800000);
 
+        // On the label only: the picture shows in the middle of the record and the
+        // grooves around it are the record's own.
+        let img = PlatterImage::new(100.0, false, true, true);
+        let (side, mid) = (img.side(), img.side() as i32 / 2);
+        let art = pic.cover_middle(side, img.label_side(), 0);
+        let mut label = vec![0u32; side * side];
+        Canvas { px: &mut label, w: side, h: side }.platter(mid, mid, &img, 0.0, Some(&art), false);
+        let mut bare = vec![0u32; side * side];
+        Canvas { px: &mut bare, w: side, h: side }.platter(mid, mid, &img, 0.0, None, false);
+        let at = |dx: i32, dy: i32| ((mid + dy) * side as i32 + mid + dx) as usize;
+        assert_eq!(label[at(-15, -15)], 0xff0000);
+        assert_eq!(label[at(15, 15)], 0xffffff);
+        assert_eq!(label[at(60, 0)], bare[at(60, 0)]);
+        assert_eq!(label[at(0, -90)], bare[at(0, -90)]);
+        assert_ne!(label[at(-15, -15)], bare[at(-15, -15)]);
+
         if let Some(out_dir) = std::env::var_os("PIC_DUMP") {
             let (w, r) = (420usize, 200.0);
-            for (name, grooves, cue, angle) in [("label", true, true, 0.0), ("turned", true, true, 0.9), ("plain", false, false, 0.9)] {
-                let img = PlatterImage::new(r, false, grooves);
-                let art = pic.cover(img.side(), img.side(), 0, 0);
+            for (name, grooves, cue, angle, label) in [("whole", true, true, 0.0, false), ("turned", true, true, 0.9, false), ("plain", false, false, 0.9, false), ("label", true, true, 0.9, true)] {
+                let img = PlatterImage::new(r, false, grooves, label);
+                let art = if label { pic.cover_middle(img.side(), img.label_side(), 0) } else { pic.cover(img.side(), img.side(), 0, 0) };
                 let mut px = pic.cover(w, w, 60, 0x0e0e12);
                 Canvas { px: &mut px, w, h: w }.platter(210, 210, &img, angle, Some(&art), cue);
                 let argb: Vec<u32> = px.iter().map(|p| 0xff000000 | p).collect();
@@ -123,7 +152,7 @@ mod tests {
             }
             // How long a fullscreen-sized record with a picture takes to draw.
             let (w, r) = (1100usize, 520.0);
-            let img = PlatterImage::new(r, false, true);
+            let img = PlatterImage::new(r, false, true, false);
             let art = pic.cover(img.side(), img.side(), 0, 0);
             let mut px = vec![0u32; w * w];
             for (what, base, step, with, cue) in [("turning", 0.0, 0.1, true, true), ("flat", 0.0, 0.0, true, false), ("sideways", 1.57, 0.0, true, false), ("no picture", 0.0, 0.1, false, false), ("line only", 0.0, 0.1, false, true)] {
