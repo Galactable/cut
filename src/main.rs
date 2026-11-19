@@ -2087,13 +2087,10 @@ impl App {
                     "--add-combo=Folder",
                     &format!("--combo-values={}", library::FOLDERS),
                     "--add-entry=...or new folder",
+                    &format!("--separator={FORM_SEP}"),
                 ])
                 .output();
-            let res = out.ok().filter(|o| o.status.success()).map(|o| {
-                let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                let mut it = s.split('|').map(String::from);
-                (it.next().unwrap_or_default(), it.next().unwrap_or_default(), it.next().unwrap_or_default())
-            });
+            let res = out.ok().filter(|o| o.status.success()).map(|o| save_form_fields(&String::from_utf8_lossy(&o.stdout)));
             let _ = tx.send(res);
         });
     }
@@ -3438,6 +3435,17 @@ fn kind_name(k: Kind) -> &'static str {
     }
 }
 
+/// Between the save form's fields in zenity's answer: a character nobody types into a
+/// name (zenity's own default, `|`, can be part of one).
+const FORM_SEP: char = '\u{1f}';
+
+/// The save form's answer: (name, folder, new folder).
+fn save_form_fields(out: &str) -> (String, String, String) {
+    let out = out.strip_suffix('\n').unwrap_or(out);
+    let mut it = out.split(FORM_SEP).map(String::from);
+    (it.next().unwrap_or_default(), it.next().unwrap_or_default(), it.next().unwrap_or_default())
+}
+
 fn wrap_angle(a: f64) -> f64 {
     use std::f64::consts::{PI, TAU};
     if a > PI {
@@ -3666,4 +3674,17 @@ fn main() -> anyhow::Result<()> {
     drop(app);
     res?;
     Ok(())
+}
+
+#[cfg(test)]
+mod save_form_tests {
+    use super::*;
+
+    #[test]
+    fn a_bar_in_the_name_stays_in_the_name() {
+        let out = format!("scratch | take{FORM_SEP}Cuts{FORM_SEP}\n");
+        assert_eq!(save_form_fields(&out), ("scratch | take".into(), "Cuts".into(), String::new()));
+        let out = format!("{FORM_SEP}{FORM_SEP}My | Folder\n");
+        assert_eq!(save_form_fields(&out), (String::new(), String::new(), "My | Folder".into()));
+    }
 }

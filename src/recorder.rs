@@ -28,10 +28,25 @@ pub fn spawn(shared: Arc<Shared>, mut rx: Consumer<f32>, rate: u32, status: Arc<
         let mut checkpoint = Instant::now();
         // Loudest sample in the take so far: a take that never made a sound isn't kept.
         let mut peak = 0f32;
+        // A take couldn't be opened: what the engine pushed before it stopped has to go,
+        // or it would turn up at the start of the next take.
+        let mut discard = false;
         loop {
             let quitting = shared.quitting.load(Relaxed);
+            if discard {
+                // Counted before looking at the flag: once the engine has stopped, all
+                // of these are from the failed take. A new take sets the flag before it
+                // pushes anything, so its audio is never among them.
+                let stale = rx.slots();
+                if !shared.recording.load(Relaxed) {
+                    if let Ok(chunk) = rx.read_chunk(stale) {
+                        chunk.commit_all();
+                    }
+                    discard = false;
+                }
+            }
             let on = shared.recording.load(Relaxed) && !quitting;
-            if on && writer.is_none() {
+            if on && writer.is_none() && !discard {
                 let dir = takes.lock().unwrap().clone();
                 let _ = std::fs::create_dir_all(&dir);
                 // Never the name of an earlier take: two takes can start in the same second.
@@ -46,6 +61,7 @@ pub fn spawn(shared: Arc<Shared>, mut rx: Consumer<f32>, rate: u32, status: Arc<
                     Err(e) => {
                         *status.lock().unwrap() = Some(format!("can't record: {e}"));
                         shared.rec_request.store(false, Relaxed);
+                        discard = true;
                     }
                 }
             }
@@ -194,6 +210,47 @@ mod tests {
         }
         assert_eq!(files(&dir, "mp3"), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_take_that_couldnt_be_opened_leaves_nothing_for_the_next() {
+        let base = std::env::temp_dir().join(format!("cut-rec-failed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        // A folder under a plain file can't be made, so the take can't be opened.
+        std::fs::write(base.join("file"), b"").unwrap();
+        let takes = Arc::new(Mutex::new(base.join("file").join("takes")));
+        let shared = Arc::new(Shared::default());
+        let status: Arc<Mutex<Option<String>>> = Arc::default();
+        let (mut tx, rx) = rtrb::RingBuffer::new(48000);
+        spawn(shared.clone(), rx, 48000, status.clone(), takes.clone(), Arc::default());
+        // The engine starts the take and pushes some audio before it hears it failed.
+        shared.rec_request.store(true, Relaxed);
+        shared.recording.store(true, Relaxed);
+        for _ in 0..2000 {
+            let _ = tx.push(0.9);
+        }
+        std::thread::sleep(Duration::from_millis(60));
+        assert!(!shared.rec_request.load(Relaxed), "the failed take is called off");
+        assert!(status.lock().unwrap().as_deref().unwrap_or("").contains("can't record"));
+        shared.recording.store(false, Relaxed);
+        std::thread::sleep(Duration::from_millis(60));
+
+        // The next take, with a folder that works, holds only its own audio.
+        let good = base.join("takes");
+        *takes.lock().unwrap() = good.clone();
+        shared.recording.store(true, Relaxed);
+        for _ in 0..1000 {
+            let _ = tx.push(0.25);
+        }
+        std::thread::sleep(Duration::from_millis(60));
+        shared.recording.store(false, Relaxed);
+        std::thread::sleep(Duration::from_millis(60));
+        let file = std::fs::read_dir(&good).unwrap().next().unwrap().unwrap().path();
+        let samples: Vec<f32> = hound::WavReader::open(&file).unwrap().samples::<f32>().map(Result::unwrap).collect();
+        assert_eq!(samples.len(), 1000);
+        assert!(samples.iter().all(|&s| s == 0.25));
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

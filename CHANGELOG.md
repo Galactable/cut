@@ -1,5 +1,9 @@
 # What's new in CUT
 
+## 0.9.3
+- Fixed: when a take couldn't be saved (say, the takes folder can't be written to), a moment of it turned up at the start of your next take.
+- Fixed: a **|** in a name typed into the save form pushed the rest of the form along, so the sample could land in the wrong folder.
+
 ## 0.9.2
 - Fixed: a take started in the same second as the one before it replaced that take. Each take now gets its own file.
 - Fixed: with takes saved as MP3, a take started straight after a long one could lose audio while the long one was still converting. Converting now happens alongside, so the next take records in full.
