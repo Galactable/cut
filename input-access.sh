@@ -7,7 +7,7 @@ set -euo pipefail
 RULE=/etc/udev/rules.d/70-cut-input.rules
 # The rule's name from when the app was called scratchdeck.
 OLD_RULE=/etc/udev/rules.d/70-scratchdeck-input.rules
-# Single devices given access from CUT's Devices menu (X).
+# Single devices given access from CUT's Devices menu (File > Devices).
 DEVICE_RULES=/etc/udev/rules.d/70-cut-devices.rules
 
 if [[ "${1:-}" == "--remove" ]]; then

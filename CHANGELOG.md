@@ -1,5 +1,8 @@
 # What's new in CUT
 
+## 0.9.1
+- `tablet-setup.sh` and the device setup files no longer say the Devices menu is on **X**: it's **File > Devices** now.
+
 ## 0.9.0
 - Fewer keys. The keyboard now only has what you reach for while playing: **Space** (fader), **Shift** (hold), **M**, **C**, **F2 F3 F4**, **Up**/**Down**, **R**, **T**, **I**, **O**, **W**, **,** **.**, **S**, **A**, **Z**, **G**, **Y**, **B**, **F12**, **Backslash** (freeze the strip), **H**, **F11** and **Ctrl+Q**. Everything else (scratch feel, sound, save format, profiles, folders, devices, backing volume, pictures and the rest of the view) is in the menus, so a stray key can't change your setup mid-scratch. **J**, **K** and **L** no longer work the fader, and **Enter** and **Backspace** no longer double as motor and back to cue.
 - Menu items that step a value (volume, sensitivity, smoothing, BPM, tempo, dim, strip zoom) keep the menu open, so you can click them again and again.

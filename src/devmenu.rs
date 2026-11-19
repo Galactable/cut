@@ -1,4 +1,4 @@
-//! The Devices menu (X) and everything a set-up device does while you play.
+//! The Devices menu (File > Devices) and everything a set-up device does while you play.
 //!
 //! Any device CUT can read shows up here as it's plugged in. Picking one lets you learn
 //! its controls: move what should scratch, then press what should cut the fader, run the

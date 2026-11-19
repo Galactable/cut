@@ -294,7 +294,7 @@ impl DevProfile {
     }
 
     pub fn text(&self) -> String {
-        let mut s = format!("# CUT device setup. Change it from the Devices menu (X) in CUT.\nid={}\nname={}\n", self.id, self.name);
+        let mut s = format!("# CUT device setup. Change it from File > Devices in CUT.\nid={}\nname={}\n", self.id, self.name);
         // Only what differs from the defaults: grab on, sensitivity x1, normal direction.
         if !self.grab {
             s.push_str("grab=false\n");
