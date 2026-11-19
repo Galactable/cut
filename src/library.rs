@@ -74,7 +74,10 @@ pub fn wav_to_mp3(wav: &Path) -> anyhow::Result<PathBuf> {
     };
     let l: Vec<f32> = samples.iter().step_by(2).copied().collect();
     let r: Vec<f32> = samples.iter().skip(1).step_by(2).copied().collect();
-    let mp3 = wav.with_extension("mp3");
+    // Never over an MP3 that's already there.
+    let dir = wav.parent().unwrap_or(Path::new("."));
+    let stem = wav.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let mp3 = unique(dir, &stem, "mp3");
     save_mp3(&mp3, &l, &r, rate)?;
     std::fs::remove_file(wav)?;
     Ok(mp3)

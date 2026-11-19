@@ -360,24 +360,35 @@ impl App {
         let range = info.range(ctl);
         let key = (inst.clone(), ctl);
         let prev = self.dev_last.insert(key.clone(), value);
+        // A control held since before the menu opened still has to be let go of below, or
+        // the fader or hold stays on after the menu closes. (The menu makes `live` false,
+        // so nothing else it does gets through.)
+        let held = self.dev_pressed.contains(&key) || self.dev_fader.contains(&key) || self.dev_hold.contains(&key);
+        let mut seen = false;
 
         if let Some(m) = self.dev_menu.as_mut() {
             match &mut m.stage {
                 Stage::Learn(l) if l.inst == inst => {
                     let info = self.devs.get(&inst).unwrap();
                     learn_event(l, info, self.dev_profiles.get(&info.id), ctl, value, prev, range);
-                    return true;
+                    if !held {
+                        return true;
+                    }
+                    seen = true;
                 }
                 Stage::List => {
                     // Touch something to find it in the list.
                     let real = ctl.is_button() && value > 0 || !ctl.is_button() && prev.is_some_and(|p| p != value);
-                    return real && self.dev_flash(&inst);
+                    seen = real && self.dev_flash(&inst);
+                    if !held {
+                        return seen;
+                    }
                 }
                 _ => {}
             }
         }
 
-        let Some(p) = self.dev_profile(&inst) else { return false };
+        let Some(p) = self.dev_profile(&inst) else { return seen };
         let scratch = p.scratch.filter(|b| b.ctl == ctl);
         let (per_turn, sens, rev) = (p.per_turn, p.sens, p.reverse);
         let hits: Vec<(usize, Bound)> = p.binds.iter().filter(|(_, b)| b.ctl == ctl).copied().collect();
@@ -466,7 +477,7 @@ impl App {
         } else {
             self.dev_pressed.remove(&key);
         }
-        did
+        did || seen
     }
 
     /// Something on this device was touched while the list is open: pick it out.

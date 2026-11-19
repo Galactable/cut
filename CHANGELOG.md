@@ -1,5 +1,11 @@
 # What's new in CUT
 
+## 0.9.2
+- Fixed: a take started in the same second as the one before it replaced that take. Each take now gets its own file.
+- Fixed: with takes saved as MP3, a take started straight after a long one could lose audio while the long one was still converting. Converting now happens alongside, so the next take records in full.
+- Fixed: a controller's fader or hold button held while the Devices menu opened could stay on after the menu closed.
+- Fixed: on a touch surface, a finger put down exactly where the last one lifted could be ignored until it moved.
+
 ## 0.9.1
 - `tablet-setup.sh` and the device setup files no longer say the Devices menu is on **X**: it's **File > Devices** now.
 

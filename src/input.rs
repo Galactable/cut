@@ -345,6 +345,10 @@ fn touch_loop(mut dev: RawDevice, proxy: &EventLoopProxy<InEvent>, info: &DevInf
     let d = info.inst.clone();
     // (x, y) per slot while a finger is on it.
     let mut slots: Vec<Option<(i32, i32)>> = vec![None; nslots];
+    // The last position reported in each slot, finger on or not. The kernel doesn't
+    // repeat a value a slot already had, so a finger put down where the last one in its
+    // slot was gets no X (or Y) at all: it starts from these.
+    let mut last: Vec<(i32, i32)> = vec![(i32::MIN, i32::MIN); nslots];
     // Tracking id per slot, so a finger swapped in the same slot isn't read as a jump.
     let mut ids = vec![-1i32; nslots];
     let mut held_ids = Vec::new();
@@ -366,14 +370,16 @@ fn touch_loop(mut dev: RawDevice, proxy: &EventLoopProxy<InEvent>, info: &DevInf
                 InputEventKind::AbsAxis(Abs::ABS_MT_SLOT) => cur = (ev.value().max(0) as usize).min(nslots - 1),
                 InputEventKind::AbsAxis(Abs::ABS_MT_TRACKING_ID) => {
                     ids[cur] = ev.value();
-                    slots[cur] = if ev.value() < 0 { None } else { Some((i32::MIN, i32::MIN)) };
+                    slots[cur] = if ev.value() < 0 { None } else { Some(last[cur]) };
                 }
                 InputEventKind::AbsAxis(Abs::ABS_MT_POSITION_X) => {
+                    last[cur].0 = ev.value();
                     if let Some(s) = slots[cur].as_mut() {
                         s.0 = ev.value();
                     }
                 }
                 InputEventKind::AbsAxis(Abs::ABS_MT_POSITION_Y) => {
+                    last[cur].1 = ev.value();
                     if let Some(s) = slots[cur].as_mut() {
                         s.1 = ev.value();
                     }
