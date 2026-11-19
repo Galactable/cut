@@ -22,7 +22,7 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 
-use winit::keyboard::KeyCode;
+use crate::cmd::Cmd;
 
 use crate::input::Kind;
 
@@ -185,48 +185,54 @@ impl Bound {
 /// What a control does.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
-    /// Cuts the sound while held (or hamster: opens it). Like Space/J/K/L.
+    /// Cuts the sound while held (or hamster: opens it). Like Space.
     Fader,
     /// Hand on the record while held, like Shift. Also a jog wheel's touch plate.
     Hold,
     /// Turning sets the volume; a slider or knob sets it directly.
     Volume,
-    /// Hot cue 0-2: tap jumps to it, holding for a second sets it at the needle.
+    /// Hot cue 0-2: tap jumps to it, holding for a second sets it at the needle, three
+    /// seconds removes it.
     HotCue(usize),
-    /// Runs exactly what this key does.
-    Cmd(KeyCode),
+    /// Runs a command, as its menu item does.
+    Cmd(Cmd),
 }
 
 /// Every action a control can take: (file key, label for people, action).
 pub const ACTIONS: &[(&str, &str, Action)] = &[
     ("fader", "Crossfader (cuts while held)", Action::Fader),
     ("hold", "Hold record / jog touch plate", Action::Hold),
-    ("motor", "Motor on/off", Action::Cmd(KeyCode::KeyM)),
-    ("cue", "Back to cue", Action::Cmd(KeyCode::KeyC)),
-    ("cue1", "Hot cue 1 (tap: jump, hold: set)", Action::HotCue(0)),
-    ("cue2", "Hot cue 2 (tap: jump, hold: set)", Action::HotCue(1)),
-    ("cue3", "Hot cue 3 (tap: jump, hold: set)", Action::HotCue(2)),
-    ("record", "Record take", Action::Cmd(KeyCode::KeyR)),
-    ("click", "Click on/off", Action::Cmd(KeyCode::KeyT)),
-    ("backing", "Backing track play/pause", Action::Cmd(KeyCode::KeyB)),
+    ("motor", "Motor on/off", Action::Cmd(Cmd::Motor)),
+    ("cue", "Back to cue", Action::Cmd(Cmd::BackToCue)),
+    ("cue1", "Hot cue 1 (tap: jump, hold: set, 3 s: remove)", Action::HotCue(0)),
+    ("cue2", "Hot cue 2 (tap: jump, hold: set, 3 s: remove)", Action::HotCue(1)),
+    ("cue3", "Hot cue 3 (tap: jump, hold: set, 3 s: remove)", Action::HotCue(2)),
+    ("record", "Record take", Action::Cmd(Cmd::Record)),
+    ("click", "Click on/off", Action::Cmd(Cmd::Click)),
+    ("backing", "Backing track play/pause", Action::Cmd(Cmd::PlayBacking)),
     ("volume", "Volume (ring, knob or slider)", Action::Volume),
-    ("vol_up", "Volume up", Action::Cmd(KeyCode::ArrowUp)),
-    ("vol_down", "Volume down", Action::Cmd(KeyCode::ArrowDown)),
-    ("hamster", "Hamster fader on/off", Action::Cmd(KeyCode::KeyI)),
-    ("rpm33", "33 rpm", Action::Cmd(KeyCode::Digit3)),
-    ("rpm45", "45 rpm", Action::Cmd(KeyCode::Digit4)),
-    ("prev", "Previous file", Action::Cmd(KeyCode::Comma)),
-    ("next", "Next file", Action::Cmd(KeyCode::Period)),
-    ("capture", "Record what's playing (start/stop)", Action::Cmd(KeyCode::KeyW)),
-    ("loop", "Loop section", Action::Cmd(KeyCode::KeyG)),
-    ("flip", "Flip direction", Action::Cmd(KeyCode::KeyD)),
-    ("sens_down", "Less sensitive", Action::Cmd(KeyCode::BracketLeft)),
-    ("sens_up", "More sensitive", Action::Cmd(KeyCode::BracketRight)),
-    ("bpm_down", "BPM down", Action::Cmd(KeyCode::Digit9)),
-    ("bpm_up", "BPM up", Action::Cmd(KeyCode::Digit0)),
-    ("eq", "Vinyl EQ on/off", Action::Cmd(KeyCode::KeyV)),
-    ("noise", "Surface noise on/off", Action::Cmd(KeyCode::KeyN)),
-    ("fullscreen", "Fullscreen", Action::Cmd(KeyCode::F11)),
+    ("vol_up", "Volume up", Action::Cmd(Cmd::VolumeUp)),
+    ("vol_down", "Volume down", Action::Cmd(Cmd::VolumeDown)),
+    ("hamster", "Hamster fader on/off", Action::Cmd(Cmd::Hamster)),
+    ("rpm33", "33 rpm", Action::Cmd(Cmd::Rpm33)),
+    ("rpm45", "45 rpm", Action::Cmd(Cmd::Rpm45)),
+    ("prev", "Previous file", Action::Cmd(Cmd::PrevFile)),
+    ("next", "Next file", Action::Cmd(Cmd::NextFile)),
+    ("capture", "Record what's playing (start/stop)", Action::Cmd(Cmd::Capture)),
+    ("loop", "Loop section", Action::Cmd(Cmd::Loop)),
+    ("flip", "Flip direction", Action::Cmd(Cmd::Flip)),
+    ("sens_down", "Less sensitive", Action::Cmd(Cmd::LessSensitive)),
+    ("sens_up", "More sensitive", Action::Cmd(Cmd::MoreSensitive)),
+    ("bpm_down", "BPM down", Action::Cmd(Cmd::BpmDown)),
+    ("bpm_up", "BPM up", Action::Cmd(Cmd::BpmUp)),
+    ("eq", "Vinyl EQ on/off", Action::Cmd(Cmd::Eq)),
+    ("noise", "Surface noise on/off", Action::Cmd(Cmd::Noise)),
+    ("fullscreen", "Fullscreen", Action::Cmd(Cmd::Fullscreen)),
+    ("whole", "Whole sample", Action::Cmd(Cmd::WholeSample)),
+    ("trainer", "Trainer strip on/off", Action::Cmd(Cmd::Trainer)),
+    ("freeze", "Freeze the trainer strip", Action::Cmd(Cmd::FreezeStrip)),
+    ("fix_beat", "Fix the beat (keys on/off)", Action::Cmd(Cmd::FixBeat)),
+    ("tap", "Tap the beat", Action::Cmd(Cmd::Tap)),
 ];
 
 /// The actions the guided setup asks for, in order.

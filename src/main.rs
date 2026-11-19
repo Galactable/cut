@@ -1,5 +1,6 @@
 mod beat;
 mod capture;
+mod cmd;
 mod cues;
 mod deck;
 mod desk;
@@ -39,80 +40,83 @@ use winit::{
 use deck::{Record, Source};
 use engine::{Engine, Msg, Shared};
 use input::{InEvent, Kind};
+use cmd::Cmd;
 use ui::*;
 
-/// The menu bar: (title, items). Each item runs exactly what its key does.
-const MENUS: &[(&str, &[(&str, KeyCode, &str)])] = &[
+/// The menu bar: (title, items). Each item runs a command; its key, if it has one, is
+/// shown beside it (see cmd.rs).
+const MENUS: &[(&str, &[(&str, Cmd)])] = &[
     ("FILE", &[
-        ("Open sample...", KeyCode::KeyO, "O"),
-        ("Record what's playing", KeyCode::KeyW, "W"),
-        ("Previous file", KeyCode::Comma, ","),
-        ("Next file", KeyCode::Period, "."),
-        ("Save section to library...", KeyCode::KeyS, "S"),
-        ("Save format", KeyCode::KeyE, "E"),
-        ("Profiles...", KeyCode::KeyP, "P"),
-        ("Folders...", KeyCode::KeyF, "F"),
-        ("Devices...", KeyCode::KeyX, "X"),
-        ("Quit", KeyCode::KeyQ, "Ctrl+Q"),
+        ("Open sample...", Cmd::Open),
+        ("Record what's playing", Cmd::Capture),
+        ("Previous file", Cmd::PrevFile),
+        ("Next file", Cmd::NextFile),
+        ("Save section to library...", Cmd::Save),
+        ("Save format", Cmd::SaveFormat),
+        ("Profiles...", Cmd::Profiles),
+        ("Folders...", Cmd::Folders),
+        ("Devices...", Cmd::Devices),
+        ("Quit", Cmd::Quit),
     ]),
     ("SECTION", &[
-        ("Whole sample", KeyCode::KeyA, "A"),
-        ("Zoom to section", KeyCode::KeyZ, "Z"),
-        ("Loop section", KeyCode::KeyG, "G"),
-        ("Back to cue", KeyCode::KeyC, "C / Bksp"),
-        ("Hot cue 1 (hold to set)", KeyCode::F2, "F2"),
-        ("Hot cue 2 (hold to set)", KeyCode::F3, "F3"),
-        ("Hot cue 3 (hold to set)", KeyCode::F4, "F4"),
+        ("Whole sample", Cmd::WholeSample),
+        ("Zoom to section", Cmd::Zoom),
+        ("Loop section", Cmd::Loop),
+        ("Back to cue", Cmd::BackToCue),
+        ("Go to hot cue 1", Cmd::HotCue(0)),
+        ("Go to hot cue 2", Cmd::HotCue(1)),
+        ("Go to hot cue 3", Cmd::HotCue(2)),
     ]),
     ("DECK", &[
-        ("Motor", KeyCode::KeyM, "M / Enter"),
-        ("33 rpm", KeyCode::Digit3, "3"),
-        ("45 rpm", KeyCode::Digit4, "4"),
-        ("Hamster fader", KeyCode::KeyI, "I"),
-        ("Volume up", KeyCode::ArrowUp, "Up"),
-        ("Volume down", KeyCode::ArrowDown, "Down"),
+        ("Motor", Cmd::Motor),
+        ("33 rpm", Cmd::Rpm33),
+        ("45 rpm", Cmd::Rpm45),
+        ("Hamster fader", Cmd::Hamster),
+        ("Volume up", Cmd::VolumeUp),
+        ("Volume down", Cmd::VolumeDown),
     ]),
     ("SCRATCH", &[
-        ("Scratch motion", KeyCode::Tab, "Tab"),
-        ("Flip direction", KeyCode::KeyD, "D"),
-        ("Less sensitive", KeyCode::BracketLeft, "["),
-        ("More sensitive", KeyCode::BracketRight, "]"),
-        ("Smoother", KeyCode::Minus, "-"),
-        ("Snappier", KeyCode::Equal, "="),
+        ("Scratch motion", Cmd::Motion),
+        ("Flip direction", Cmd::Flip),
+        ("Less sensitive", Cmd::LessSensitive),
+        ("More sensitive", Cmd::MoreSensitive),
+        ("Smoother", Cmd::Smoother),
+        ("Snappier", Cmd::Snappier),
     ]),
-    ("SOUND", &[("Vinyl EQ", KeyCode::KeyV, "V"), ("Surface noise", KeyCode::KeyN, "N")]),
+    ("SOUND", &[("Vinyl EQ", Cmd::Eq), ("Surface noise", Cmd::Noise)]),
     ("TAKES", &[
-        ("Record take", KeyCode::KeyR, "R"),
-        ("Click", KeyCode::KeyT, "T"),
-        ("BPM down", KeyCode::Digit9, "9"),
-        ("BPM up", KeyCode::Digit0, "0"),
+        ("Record take", Cmd::Record),
+        ("Click", Cmd::Click),
+        ("BPM down", Cmd::BpmDown),
+        ("BPM up", Cmd::BpmUp),
     ]),
     ("BACKING", &[
-        ("Load backing track...", KeyCode::KeyY, "Y"),
-        ("Play / pause", KeyCode::KeyB, "B"),
-        ("Volume down", KeyCode::Digit5, "5"),
-        ("Volume up", KeyCode::Digit6, "6"),
-        ("Record it into takes", KeyCode::KeyU, "U"),
-        ("Tap the beat (start on one)", KeyCode::Slash, "/"),
-        ("Half tempo", KeyCode::Digit7, "7"),
-        ("Double tempo", KeyCode::Digit8, "8"),
-        ("Beats earlier", KeyCode::Semicolon, ";"),
-        ("Beats later", KeyCode::Quote, "'"),
-        ("Detect the beat again", KeyCode::Digit1, "1"),
+        ("Load backing track...", Cmd::LoadBacking),
+        ("Play / pause", Cmd::PlayBacking),
+        ("Volume down", Cmd::BackingQuieter),
+        ("Volume up", Cmd::BackingLouder),
+        ("Record it into takes", Cmd::BackingInTakes),
+        ("Fix the beat (keys on)", Cmd::FixBeat),
+        ("Tap the beat (start on one)", Cmd::Tap),
+        ("Half tempo", Cmd::HalfTempo),
+        ("Double tempo", Cmd::DoubleTempo),
+        ("Beats earlier (Ctrl: a beat)", Cmd::BeatsEarlier),
+        ("Beats later (Ctrl: a beat)", Cmd::BeatsLater),
+        ("Detect the beat again", Cmd::Redetect),
     ]),
     ("VIEW", &[
-        ("Key guide", KeyCode::KeyH, "H"),
-        ("Fullscreen", KeyCode::F11, "F11"),
-        ("Background image...", KeyCode::F5, "F5"),
-        ("Record image...", KeyCode::F6, "F6"),
-        ("Record image covers", KeyCode::Digit2, "2"),
-        ("Dim background", KeyCode::F7, "F7"),
-        ("Record grooves", KeyCode::F8, "F8"),
-        ("Cue line", KeyCode::F9, "F9"),
-        ("Trainer strip", KeyCode::F12, "F12"),
-        ("Freeze the strip", KeyCode::Backslash, "\\"),
-        ("Zoom the strip", KeyCode::Backquote, "`"),
-        ("What's new", KeyCode::F1, "F1"),
+        ("Key guide", Cmd::Guide),
+        ("Fullscreen", Cmd::Fullscreen),
+        ("Background image...", Cmd::Background),
+        ("Record image...", Cmd::RecordImage),
+        ("Record image covers", Cmd::LabelOnly),
+        ("Dim background", Cmd::Dim),
+        ("Record grooves", Cmd::Grooves),
+        ("Cue line", Cmd::CueLine),
+        ("Trainer strip", Cmd::Trainer),
+        ("Freeze the strip", Cmd::FreezeStrip),
+        ("Zoom the strip", Cmd::ZoomStrip),
+        ("What's new", Cmd::WhatsNew),
     ]),
 ];
 
@@ -148,22 +152,19 @@ const SCROLL_PX: f64 = 40.0;
 const SCROLL_HOLD: Duration = Duration::from_millis(140);
 
 /// Which guide groups go in which column (indexes into GUIDE), left to right.
-const GUIDE_COLUMNS: &[&[usize]] = &[&[0, 4, 6], &[2, 3], &[1, 5, 7]];
+const GUIDE_COLUMNS: &[&[usize]] = &[&[0, 1, 2], &[3, 4], &[5, 6]];
 
-/// The key guide, by group. Headings carry a Nerd Font icon.
+/// The key guide, by group: every key that does something (see cmd.rs). The rest is in
+/// the menus. Headings carry a Nerd Font icon.
 const GUIDE: &[(&str, &str, &[(&str, &str)])] = &[
     ("\u{f001}", "SCRATCH", &[
         ("mouse drag", "hand on record"),
         ("2 fingers", "grab (touchpad)"),
         ("1 finger", "grab (tablet)"),
         ("Shift", "hold record"),
-        ("Tab", "scratch motion"),
-        ("D", "flip direction"),
-        ("[ ]", "sensitivity"),
-        ("- =", "smoothing"),
     ]),
-    ("\u{f1de}", "FADER", &[("Space J K L", "cut"), ("I", "hamster mode")]),
-    ("\u{f04b}", "DECK", &[("M / Enter", "motor on/off"), ("C / Bksp", "back to cue"), ("F2 F3 F4", "hot cues (hold = set)"), ("3 4", "33 / 45 rpm"), ("Up Down", "volume")]),
+    ("\u{f1de}", "FADER", &[("Space", "cut"), ("I", "hamster mode")]),
+    ("\u{f04b}", "DECK", &[("M", "motor on/off"), ("C", "back to cue"), ("F2 F3 F4", "hot cues"), ("hold", "1 s set, 3 s remove"), ("Up Down", "volume")]),
     ("\u{f0c4}", "SAMPLE", &[
         ("drag wave", "pick section"),
         ("drag edge", "trim section"),
@@ -175,22 +176,9 @@ const GUIDE: &[(&str, &str, &[(&str, &str)])] = &[
         ("O", "open file"),
         ("W", "record what's playing"),
     ]),
-    ("\u{f130}", "TAKES", &[("R", "record take"), ("E", "WAV / MP3"), ("T", "click on/off"), ("9 0", "BPM (Ctrl = 10)")]),
-    ("\u{f028}", "SOUND", &[("V", "vinyl EQ"), ("N", "surface noise")]),
-    ("\u{f001}", "BACKING", &[("Y", "load track"), ("B", "play / pause"), ("5 6", "its volume"), ("U", "into takes"), ("/", "tap the beat"), ("F12", "trainer strip"), ("\\ `", "freeze / zoom strip")]),
-    ("\u{f108}", "APP", &[
-        ("Alt / F10", "menu bar"),
-        ("H", "hide keys"),
-        ("P", "profiles"),
-        ("F", "folders"),
-        ("X", "devices"),
-        ("F5", "background image"),
-        ("F6 2", "record image / on label"),
-        ("F7", "dim background"),
-        ("F8 F9", "grooves / cue line"),
-        ("F11", "fullscreen"),
-        ("Ctrl+Q", "quit"),
-    ]),
+    ("\u{f130}", "TAKES", &[("R", "record take"), ("T", "click on/off")]),
+    ("\u{f001}", "BACKING", &[("Y", "load track"), ("B", "play / pause"), ("F12", "trainer strip"), ("\\", "freeze strip")]),
+    ("\u{f108}", "APP", &[("Alt / F10", "menus: everything else"), ("H", "hide keys"), ("F11", "fullscreen"), ("Ctrl+Q", "quit")]),
 ];
 
 /// The two places one of your own pictures can go.
@@ -346,6 +334,22 @@ struct Layout {
 }
 
 /// Starting layout until the first frame is painted (paint() owns the real one).
+/// The scale factor X11 desktops ask for: Xft.dpi / 96, or 1 when it isn't set. (winit
+/// otherwise guesses one from the screen's physical size, which turns a 14" 1080p laptop
+/// panel into 150% that nobody asked for.)
+fn x11_scale() -> f64 {
+    std::process::Command::new("xrdb")
+        .arg("-query")
+        .output()
+        .ok()
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .find_map(|l| l.strip_prefix("Xft.dpi:").and_then(|v| v.trim().parse::<f64>().ok()))
+        })
+        .map_or(1.0, |dpi| dpi / 96.0)
+}
+
 /// The whole-number UI scale for a screen scale factor: 1 up to 149%, 2 from 150% to
 /// 249%, and so on. Whole numbers keep text and lines sharp. CUT_SCALE overrides it.
 fn ui_scale(factor: f64) -> u32 {
@@ -446,8 +450,12 @@ struct App {
     /// Mouse buttons whose press was ignored (desk.rs), so their release is too.
     ignored_buttons: Vec<MouseButton>,
     focused: bool,
+    /// Backing > Fix the beat: the beat keys (cmd::BEAT_KEYS) work until Esc.
+    fixing_beat: bool,
     /// Running as a native Wayland window (not X11 or XWayland).
     wayland: bool,
+    /// On X11, the scale factor from Xft.dpi (see `x11_scale`).
+    x11_scale: Option<f64>,
     /// Pen or touch currently holding the record through direct input.
     direct: Option<Kind>,
     direct_prev: (f64, f64),
@@ -995,63 +1003,64 @@ impl App {
     }
 
     /// What a menu item currently is: a value or on/off, shown beside it.
-    fn item_state(&self, code: KeyCode) -> Option<(String, u32)> {
+    fn item_state(&self, cmd: Cmd) -> Option<(String, u32)> {
         let on = |b: bool| Some(if b { ("on".to_string(), GREEN) } else { ("off".to_string(), DIM) });
         let kind = self.sens_kind as usize;
-        match code {
-            KeyCode::KeyM => on(self.motor),
-            KeyCode::KeyE => Some(if self.save_mp3.load(Relaxed) { ("MP3".into(), LILAC) } else { ("WAV".into(), LILAC) }),
-            KeyCode::KeyG => on(self.loop_section),
-            KeyCode::KeyI => on(self.invert),
-            KeyCode::KeyV => on(self.eq),
-            KeyCode::KeyN => on(self.noise),
-            KeyCode::KeyH => on(self.show_guide),
-            KeyCode::F5 => Some(pic_state(&self.bg_path)),
-            KeyCode::F6 => Some(pic_state(&self.label_path)),
-            KeyCode::Digit2 => Some((if self.label_only { "label".into() } else { "whole record".into() }, WHITE)),
-            KeyCode::F7 => Some((format!("{}%", self.bg_dim), WHITE)),
-            KeyCode::F8 => on(self.grooves),
-            KeyCode::F9 => on(self.cue_line),
-            KeyCode::KeyT => on(self.click),
-            KeyCode::F12 => on(self.trainer.on),
-            KeyCode::Backslash => on(self.trainer.frozen),
-            KeyCode::Backquote => Some((format!("{} beats", self.trainer.beats), WHITE)),
-            KeyCode::KeyB => Some(match &self.backing {
+        match cmd {
+            Cmd::Motor => on(self.motor),
+            Cmd::SaveFormat => Some(if self.save_mp3.load(Relaxed) { ("MP3".into(), LILAC) } else { ("WAV".into(), LILAC) }),
+            Cmd::Loop => on(self.loop_section),
+            Cmd::Hamster => on(self.invert),
+            Cmd::Eq => on(self.eq),
+            Cmd::Noise => on(self.noise),
+            Cmd::Guide => on(self.show_guide),
+            Cmd::Background => Some(pic_state(&self.bg_path)),
+            Cmd::RecordImage => Some(pic_state(&self.label_path)),
+            Cmd::LabelOnly => Some((if self.label_only { "label".into() } else { "whole record".into() }, WHITE)),
+            Cmd::Dim => Some((format!("{}%", self.bg_dim), WHITE)),
+            Cmd::Grooves => on(self.grooves),
+            Cmd::CueLine => on(self.cue_line),
+            Cmd::Click => on(self.click),
+            Cmd::Trainer => on(self.trainer.on),
+            Cmd::FreezeStrip => on(self.trainer.frozen),
+            Cmd::ZoomStrip => Some((format!("{} beats", self.trainer.beats), WHITE)),
+            Cmd::PlayBacking => Some(match &self.backing {
                 Some(_) if self.backing_on => ("playing".into(), GREEN),
                 Some(_) => ("paused".into(), WHITE),
                 None => ("none loaded".into(), DIM),
             }),
-            KeyCode::KeyU => on(self.backing_in_take),
-            KeyCode::KeyW => Some(match &self.capture {
+            Cmd::BackingInTakes => on(self.backing_in_take),
+            Cmd::Capture => Some(match &self.capture {
                 Some(c) if c.stopping => ("saving".into(), WHITE),
                 Some(_) => ("recording".into(), RED),
                 None => ("off".into(), DIM),
             }),
-            KeyCode::Digit5 | KeyCode::Digit6 => Some((format!("{:.0}%", self.backing_vol * 100.0), WHITE)),
-            KeyCode::F11 => on(self.window.as_ref().is_some_and(|w| w.fullscreen().is_some())),
-            KeyCode::Digit3 if !self.rpm45 => Some(("\u{f00c}".into(), GREEN)),
-            KeyCode::Digit4 if self.rpm45 => Some(("\u{f00c}".into(), GREEN)),
-            KeyCode::Tab => Some((format!("{} {}", kind_name(self.sens_kind), self.motion_name()), LILAC)),
-            KeyCode::KeyD => Some((if self.dir > 0.0 { "+".into() } else { "-".into() }, WHITE)),
-            KeyCode::BracketLeft | KeyCode::BracketRight => Some((format!("x{:.2}", self.sens[kind]), WHITE)),
-            KeyCode::Minus | KeyCode::Equal => Some((format!("{:.0} Hz", self.smooth_hz), WHITE)),
-            KeyCode::ArrowUp | KeyCode::ArrowDown => Some((format!("{:.0}%", self.volume * 100.0), WHITE)),
-            KeyCode::Digit9 | KeyCode::Digit0 => Some(match self.grid {
+            Cmd::BackingQuieter | Cmd::BackingLouder => Some((format!("{:.0}%", self.backing_vol * 100.0), WHITE)),
+            Cmd::Fullscreen => on(self.window.as_ref().is_some_and(|w| w.fullscreen().is_some())),
+            Cmd::Rpm33 if !self.rpm45 => Some(("\u{f00c}".into(), GREEN)),
+            Cmd::Rpm45 if self.rpm45 => Some(("\u{f00c}".into(), GREEN)),
+            Cmd::Motion => Some((format!("{} {}", kind_name(self.sens_kind), self.motion_name()), LILAC)),
+            Cmd::Flip => Some((if self.dir > 0.0 { "+".into() } else { "-".into() }, WHITE)),
+            Cmd::LessSensitive | Cmd::MoreSensitive => Some((format!("x{:.2}", self.sens[kind]), WHITE)),
+            Cmd::Smoother | Cmd::Snappier => Some((format!("{:.0} Hz", self.smooth_hz), WHITE)),
+            Cmd::VolumeUp | Cmd::VolumeDown => Some((format!("{:.0}%", self.volume * 100.0), WHITE)),
+            Cmd::BpmDown | Cmd::BpmUp => Some(match self.grid {
                 Some(g) => (format!("track {:.1} BPM", g.bpm), LILAC),
                 None => (format!("{:.0} BPM", self.bpm), WHITE),
             }),
-            KeyCode::Slash | KeyCode::Digit7 | KeyCode::Digit8 => Some(match self.grid {
+            Cmd::FixBeat => on(self.fixing_beat),
+            Cmd::Tap | Cmd::HalfTempo | Cmd::DoubleTempo => Some(match self.grid {
                 Some(g) => (format!("{:.1} BPM", g.bpm), LILAC),
                 None => ("no beat yet".into(), DIM),
             }),
-            KeyCode::KeyR => Some(if self.shared.recording.load(Relaxed) {
+            Cmd::Record => Some(if self.shared.recording.load(Relaxed) {
                 ("recording".into(), RED)
             } else if self.shared.rec_request.load(Relaxed) {
                 ("armed".into(), WHITE)
             } else {
                 ("off".into(), DIM)
             }),
-            KeyCode::KeyP => Some(match &self.profile {
+            Cmd::Profiles => Some(match &self.profile {
                 Some(p) => (format!("{p}{}", if self.profile_dirty { "*" } else { "" }), GREEN),
                 None => ("none".into(), DIM),
             }),
@@ -1065,12 +1074,15 @@ impl App {
     }
 
     /// Runs a menu item: the same as pressing its key.
-    fn run_item(&mut self, code: KeyCode) {
-        self.bar.open = None;
-        if code == KeyCode::KeyQ {
+    /// A menu item was chosen. Items that step a value keep the menu open for another go.
+    fn run_item(&mut self, cmd: Cmd) {
+        if !cmd.steps() {
+            self.bar.open = None;
+        }
+        if cmd == Cmd::Quit {
             self.quit = true;
         } else {
-            self.command(code);
+            self.command(cmd);
         }
     }
 
@@ -1086,8 +1098,8 @@ impl App {
             KeyCode::ArrowUp => self.bar.sel = (self.bar.sel + items.len() - 1) % items.len(),
             KeyCode::ArrowDown => self.bar.sel = (self.bar.sel + 1) % items.len(),
             KeyCode::Enter | KeyCode::NumpadEnter => {
-                let code = items[self.bar.sel.min(items.len() - 1)].1;
-                self.run_item(code);
+                let cmd = items[self.bar.sel.min(items.len() - 1)].1;
+                self.run_item(cmd);
             }
             KeyCode::Escape | KeyCode::F10 | KeyCode::AltLeft => self.bar.open = None,
             _ => {
@@ -1165,7 +1177,7 @@ impl App {
         version_key(VERSION) > version_key(&self.version_seen)
     }
 
-    /// F1 or a click on the version: the release notes, newest first, with the ones
+    /// View > What's new, or a click on the version: the release notes, newest first, with the ones
     /// you haven't seen marked.
     fn open_whats_new(&mut self) {
         let seen = version_key(&self.version_seen);
@@ -1826,7 +1838,7 @@ impl App {
 
     fn key(&mut self, code: KeyCode, pressed: bool, repeat: bool) {
         match code {
-            KeyCode::Space | KeyCode::KeyJ | KeyCode::KeyK | KeyCode::KeyL => {
+            KeyCode::Space => {
                 if pressed {
                     self.fader_keys.insert(code);
                 } else {
@@ -1840,53 +1852,69 @@ impl App {
                 self.update_hand();
                 return;
             }
-            KeyCode::F2 | KeyCode::F3 | KeyCode::F4 => {
-                let n = cue_key(code).unwrap();
+            KeyCode::Escape if self.fixing_beat => {
                 if pressed && !repeat {
-                    self.cue_down(n);
-                } else if !pressed {
-                    self.cue_up(n, true);
+                    self.command(Cmd::FixBeat);
                 }
                 return;
             }
             _ => {}
         }
-        if !pressed || repeat {
+        let Some(cmd) = cmd::for_key(code, self.fixing_beat) else { return };
+        if let Cmd::HotCue(n) = cmd {
+            if pressed && !repeat {
+                self.cue_down(n);
+            } else if !pressed {
+                self.cue_up(n, true);
+            }
             return;
         }
-        self.command(code);
+        if !pressed || repeat || (cmd == Cmd::Quit && !self.ctrl) {
+            return;
+        }
+        self.command(cmd);
     }
 
-    /// Runs a key's command (from the keyboard or a menu), then saves the settings and
-    /// marks the profile changed if they moved.
-    fn command(&mut self, code: KeyCode) {
+    /// Runs a command (from the keyboard, a menu or a device button), then saves the
+    /// settings and marks the profile changed if they moved.
+    pub fn command(&mut self, cmd: Cmd) {
         let before = self.settings_text();
-        self.handle_command(code);
+        self.handle_command(cmd);
         if self.settings_text() != before {
             self.profile_dirty = true;
         }
         self.save_settings();
     }
 
-    fn handle_command(&mut self, code: KeyCode) {
-        if self.beat_command(code) || self.trainer_command(code) {
+    fn handle_command(&mut self, cmd: Cmd) {
+        if self.beat_command(cmd) || self.trainer_command(cmd) {
             return;
         }
-        match code {
-            KeyCode::KeyM | KeyCode::Enter => {
+        match cmd {
+            Cmd::Motor => {
                 self.motor = !self.motor;
                 self.send(Msg::Motor(self.motor));
             }
-            KeyCode::KeyC | KeyCode::Backspace => {
+            Cmd::BackToCue => {
                 let cue = self.rec.cue;
                 self.send(Msg::Seek(cue));
             }
-            // From the menu: a tap. Holding the key sets the cue (see `key`).
-            KeyCode::F2 | KeyCode::F3 | KeyCode::F4 => self.cue_jump(cue_key(code).unwrap()),
-            KeyCode::Tab if self.sens_kind == Kind::Controller => {
-                self.say("controllers turn the record directly - Tab is for touch surfaces and the mouse");
+            // From the menu: a tap. Holding a key or button sets the cue (see `key`).
+            Cmd::HotCue(n) => self.cue_jump(n),
+            Cmd::FixBeat => {
+                self.fixing_beat = !self.fixing_beat;
+                self.say(if !self.fixing_beat {
+                    "beat keys off"
+                } else if self.backing.is_none() {
+                    "fixing the beat - load a backing track first (Y)"
+                } else {
+                    "fixing the beat: play the track (B) and tap / on beat one. Esc when done"
+                });
             }
-            KeyCode::Tab => {
+            Cmd::Motion if self.sens_kind == Kind::Controller => {
+                self.say("controllers turn the record directly - scratch motion is for touch surfaces and the mouse");
+            }
+            Cmd::Motion => {
                 // Changes the motion for whichever surface you used last.
                 let m = &mut self.mode[self.sens_kind as usize];
                 *m = match *m {
@@ -1898,37 +1926,37 @@ impl App {
                 let m = *m;
                 self.say(format!("{}: {}", kind_name(self.sens_kind), m.name()));
             }
-            KeyCode::KeyD => self.dir = -self.dir,
-            KeyCode::BracketLeft | KeyCode::BracketRight => {
+            Cmd::Flip => self.dir = -self.dir,
+            Cmd::LessSensitive | Cmd::MoreSensitive => {
                 let s = &mut self.sens[self.sens_kind as usize];
-                *s = if code == KeyCode::BracketLeft { (*s / 1.15).max(0.1) } else { (*s * 1.15).min(10.0) };
+                *s = if cmd == Cmd::LessSensitive { (*s / 1.15).max(0.1) } else { (*s * 1.15).min(10.0) };
             }
-            KeyCode::Minus => {
+            Cmd::Smoother => {
                 self.smooth_hz = (self.smooth_hz / 1.25).max(20.0);
                 self.send(Msg::Smooth(self.smooth_hz));
             }
-            KeyCode::Equal => {
+            Cmd::Snappier => {
                 self.smooth_hz = (self.smooth_hz * 1.25).min(400.0);
                 self.send(Msg::Smooth(self.smooth_hz));
             }
-            KeyCode::KeyV => {
+            Cmd::Eq => {
                 self.eq = !self.eq;
                 self.rebuild(true);
             }
-            KeyCode::KeyN => {
+            Cmd::Noise => {
                 self.noise = !self.noise;
                 self.rebuild(true);
             }
-            KeyCode::KeyI => {
+            Cmd::Hamster => {
                 self.invert = !self.invert;
                 self.update_fader();
             }
-            KeyCode::KeyR => {
+            Cmd::Record => {
                 let on = !self.shared.rec_request.load(Relaxed);
                 self.shared.rec_request.store(on, Relaxed);
                 let what = match (self.backing.is_some() && self.backing_on, self.backing_in_take) {
                     (true, true) => " - recording scratch + backing track",
-                    (true, false) => " - recording the scratch only (U adds the backing track)",
+                    (true, false) => " - recording the scratch only (Backing > Record it into takes adds the track)",
                     _ => "",
                 };
                 // The free click counts a take in; the track's own beat doesn't need to,
@@ -1939,42 +1967,42 @@ impl App {
                     self.say(format!("take started{what}"));
                 }
             }
-            KeyCode::KeyT => {
+            Cmd::Click => {
                 self.click = !self.click;
                 self.send(Msg::Metronome(self.click));
             }
-            KeyCode::Digit9 | KeyCode::Digit0 => {
-                let d = if code == KeyCode::Digit0 { 1.0 } else { -1.0 };
+            Cmd::BpmDown | Cmd::BpmUp => {
+                let d = if cmd == Cmd::BpmUp { 1.0 } else { -1.0 };
                 let step = if self.ctrl { 10.0 } else { 1.0 };
                 self.bpm = (self.bpm + d * step).clamp(40.0, 220.0);
                 self.send(Msg::Bpm(self.bpm));
             }
-            KeyCode::KeyO => self.open_dialog(),
-            KeyCode::KeyW => self.toggle_capture(),
-            KeyCode::KeyS => self.save_dialog(),
-            KeyCode::KeyP => self.open_profile_menu(),
-            KeyCode::KeyH => self.show_guide = !self.show_guide,
-            KeyCode::F5 => self.pic_key(Pic::Background),
-            KeyCode::F6 => self.pic_key(Pic::Record),
-            KeyCode::Digit2 => {
+            Cmd::Open => self.open_dialog(),
+            Cmd::Capture => self.toggle_capture(),
+            Cmd::Save => self.save_dialog(),
+            Cmd::Profiles => self.open_profile_menu(),
+            Cmd::Guide => self.show_guide = !self.show_guide,
+            Cmd::Background => self.pic_key(Pic::Background),
+            Cmd::RecordImage => self.pic_key(Pic::Record),
+            Cmd::LabelOnly => {
                 self.label_only = !self.label_only;
                 self.label_cache = None;
                 let place = if self.label_only { "on the label" } else { "across the whole record" };
-                let hint = if self.label_path.is_none() { " - F6 chooses one" } else { "" };
+                let hint = if self.label_path.is_none() { " - View > Record image chooses one" } else { "" };
                 self.say(format!("record image {place}{hint}"));
             }
-            KeyCode::F7 => {
+            Cmd::Dim => {
                 self.bg_dim = (self.bg_dim / 20 * 20 + 20) % 100;
                 if self.bg_path.is_none() {
-                    self.say(format!("background dim {}% - F5 chooses a background image", self.bg_dim));
+                    self.say(format!("background dim {}% - View > Background image chooses one", self.bg_dim));
                 }
             }
-            KeyCode::F8 => self.grooves = !self.grooves,
-            KeyCode::F9 => self.cue_line = !self.cue_line,
-            KeyCode::KeyF => self.open_folder_menu(),
-            KeyCode::KeyX => self.open_dev_menu(),
-            KeyCode::KeyY => self.backing_dialog(),
-            KeyCode::KeyB => {
+            Cmd::Grooves => self.grooves = !self.grooves,
+            Cmd::CueLine => self.cue_line = !self.cue_line,
+            Cmd::Folders => self.open_folder_menu(),
+            Cmd::Devices => self.open_dev_menu(),
+            Cmd::LoadBacking => self.backing_dialog(),
+            Cmd::PlayBacking => {
                 if self.backing.is_none() {
                     self.backing_dialog();
                 } else {
@@ -1982,60 +2010,60 @@ impl App {
                     self.send(Msg::BackingPlay(self.backing_on));
                 }
             }
-            KeyCode::Digit5 | KeyCode::Digit6 => {
-                let d = if code == KeyCode::Digit6 { 0.05 } else { -0.05 };
+            Cmd::BackingQuieter | Cmd::BackingLouder => {
+                let d = if cmd == Cmd::BackingLouder { 0.05 } else { -0.05 };
                 self.backing_vol = (self.backing_vol + d).clamp(0.0, 1.5);
                 self.send(Msg::BackingVolume(self.backing_vol));
             }
-            KeyCode::KeyU => {
+            Cmd::BackingInTakes => {
                 self.backing_in_take = !self.backing_in_take;
                 self.send(Msg::BackingInTake(self.backing_in_take));
                 self.say(if self.backing_in_take { "takes record the full mix: scratch + backing track" } else { "takes record the scratch alone" });
             }
-            KeyCode::F1 => self.open_whats_new(),
-            KeyCode::KeyZ => self.toggle_zoom(),
-            KeyCode::KeyE => {
+            Cmd::WhatsNew => self.open_whats_new(),
+            Cmd::Zoom => self.toggle_zoom(),
+            Cmd::SaveFormat => {
                 let mp3 = !self.save_mp3.load(Relaxed);
                 self.save_mp3.store(mp3, Relaxed);
                 self.say(if mp3 { "save format: MP3 (320 kbps) - used next time you save or record" } else { "save format: WAV - used next time you save or record" });
             }
-            KeyCode::KeyG => {
+            Cmd::Loop => {
                 self.loop_section = !self.loop_section;
                 self.rebuild(true);
                 self.say(if self.loop_section { "section loops (no lead-in or run-out)" } else { "section plays once, with lead-in and run-out" });
             }
-            KeyCode::Comma => self.step_file(-1),
-            KeyCode::Period => self.step_file(1),
-            KeyCode::KeyA => {
+            Cmd::PrevFile => self.step_file(-1),
+            Cmd::NextFile => self.step_file(1),
+            Cmd::WholeSample => {
                 self.region = (0, self.src.len());
                 self.rebuild(false);
                 self.say("whole sample");
             }
-            KeyCode::Digit3 => {
+            Cmd::Rpm33 => {
                 self.rpm45 = false;
                 self.send(Msg::Rpm(1.0));
             }
-            KeyCode::Digit4 => {
+            Cmd::Rpm45 => {
                 self.rpm45 = true;
                 self.send(Msg::Rpm(45.0 / (100.0 / 3.0)));
             }
-            KeyCode::ArrowUp => {
+            Cmd::VolumeUp => {
                 if self.volume <= 1.0 + 1e-3 && self.volume + 0.05 > 1.0 + 1e-3 {
                     self.say("volume over 100%: loud peaks get squashed, in takes too");
                 }
                 self.volume = (self.volume + 0.05).min(1.5);
                 self.send(Msg::Volume(self.volume));
             }
-            KeyCode::ArrowDown => {
+            Cmd::VolumeDown => {
                 self.volume = (self.volume - 0.05).max(0.0);
                 self.send(Msg::Volume(self.volume));
             }
-            KeyCode::F11 => {
+            Cmd::Fullscreen => {
                 if let Some(w) = &self.window {
                     w.set_fullscreen(if w.fullscreen().is_some() { None } else { Some(Fullscreen::Borderless(None)) });
                 }
             }
-            KeyCode::KeyQ if self.ctrl => self.quit = true,
+            Cmd::Quit if self.ctrl => self.quit = true,
             _ => {}
         }
     }
@@ -2149,11 +2177,11 @@ impl App {
         });
     }
 
-    /// F5 / F6: choose a picture, or take the current one away.
+    /// Background / record image: choose a picture, or take the current one away.
     fn pic_key(&mut self, which: Pic) {
         let (key, name) = match which {
-            Pic::Background => ("F5", "background image"),
-            Pic::Record => ("F6", "record image"),
+            Pic::Background => ("View > Background image", "background image"),
+            Pic::Record => ("View > Record image", "record image"),
         };
         let had = match which {
             Pic::Background => {
@@ -2258,7 +2286,7 @@ impl App {
                 self.backing_path = Some(path);
                 match self.grid_for_new_backing(found) {
                     Some(g) => self.say(format!("backing track: {name}, {:.1} BPM - B to play, T for a click on its beat", g.bpm)),
-                    None => self.say(format!("backing track: {name} - B to play. No steady beat found: tap / along with it")),
+                    None => self.say(format!("backing track: {name} - B to play. No steady beat found: Backing > Fix the beat to tap it in")),
                 }
                 self.save_settings();
             }
@@ -2294,7 +2322,8 @@ impl App {
         let Some(mut surface) = self.surface.take() else { return };
         let size = win.inner_size();
         let (w, h) = (size.width.max(1), size.height.max(1));
-        let k = ui_scale(win.scale_factor());
+        // Wayland's factor is the desktop's own setting; X11's comes from Xft.dpi.
+        let k = ui_scale(self.x11_scale.unwrap_or_else(|| win.scale_factor()));
         if k != self.ui_scale {
             // The pointer was last reported at the old scale.
             self.cursor = (self.cursor.0 * self.ui_scale as f64 / k as f64, self.cursor.1 * self.ui_scale as f64 / k as f64);
@@ -2385,10 +2414,12 @@ impl App {
         let (w, h) = (c.w as i32, c.h as i32);
         let px = 15.0;
         let row_h = 30;
-        let states: Vec<Option<(String, u32)>> = items.iter().map(|(_, k, _)| self.item_state(*k)).collect();
-        let lw = items.iter().map(|(l, _, _)| f.width(l, px, false)).max().unwrap_or(0);
+        let states: Vec<Option<(String, u32)>> = items.iter().map(|(_, k)| self.item_state(*k)).collect();
+        let lw = items.iter().map(|(l, _)| f.width(l, px, false)).max().unwrap_or(0);
         let sw = states.iter().map(|s| s.as_ref().map_or(0, |(t, _)| f.width(t, 13.0, false))).max().unwrap_or(0);
-        let kw = items.iter().map(|(_, _, k)| f.width(k, 13.0, true)).max().unwrap_or(0) + 12;
+        // Most commands have no key now; the key column only shows for those that do.
+        let kw = items.iter().map(|(_, c)| f.width(cmd::key_name(*c), 13.0, true)).max().unwrap_or(0);
+        let kw = if kw > 0 { kw + 12 } else { 0 };
         let dw = (16 + lw + 24 + sw + 16 + kw + 14).min(w - 16);
         let dh = (items.len() as i32 * row_h + 12).min(h - BAR_H - 8);
         let dx = self.bar.titles[open].0.min(w - 8 - dw).max(8);
@@ -2397,7 +2428,8 @@ impl App {
         c.boxed(dx, dy, dw, dh, 0x14141b, PURPLE);
         self.bar.rows.clear();
         let mut y = dy + 6;
-        for (i, ((label, _, key), state)) in items.iter().zip(&states).enumerate() {
+        for (i, ((label, item), state)) in items.iter().zip(&states).enumerate() {
+            let key = cmd::key_name(*item);
             self.bar.rows.push((y, y + row_h));
             let sel = i == self.bar.sel;
             if sel {
@@ -2406,9 +2438,11 @@ impl App {
             }
             f.draw(c, dx + 16, y + (row_h - 19) / 2, label, if sel { WHITE } else { TEXT }, px, false);
             let kx = dx + dw - 14 - kw;
-            c.boxed(kx, y + 4, kw, row_h - 8, 0x0d2410, 0x1d5a22);
-            let tw = f.width(key, 13.0, true);
-            f.draw(c, kx + (kw - tw) / 2, y + (row_h - 17) / 2, key, GREEN, 13.0, true);
+            if !key.is_empty() {
+                c.boxed(kx, y + 4, kw, row_h - 8, 0x0d2410, 0x1d5a22);
+                let tw = f.width(key, 13.0, true);
+                f.draw(c, kx + (kw - tw) / 2, y + (row_h - 17) / 2, key, GREEN, 13.0, true);
+            }
             if let Some((t, col)) = state {
                 let tw = f.width(t, 13.0, false);
                 f.draw(c, kx - 14 - tw, y + (row_h - 17) / 2, t, *col, 13.0, false);
@@ -2689,15 +2723,30 @@ impl App {
         }
         c.rect(zx + zw / 2 - 1, zy, 2, zh, GREEN);
         }
-        // A held hot cue button fills up beside the needle until its cue is set.
+        if self.fixing_beat {
+            // The beat keys are live: say which, as long as they are.
+            let long = "FIXING THE BEAT   / tap   7 8 half / double   ; ' earlier / later   9 0 tempo   1 detect again   Esc done";
+            let short = "FIXING THE BEAT - keys in the Backing menu - Esc done";
+            let fits = |t: &str, f: &mut text::Fonts| f.width(t, 13.0, true) + 16 <= zw - 12;
+            let t = if fits(long, f) { long } else { short };
+            let mw = (f.width(t, 13.0, true) + 16).min(zw - 12);
+            c.boxed(zx + 6, zy + 4, mw, 22, CHIP, LILAC);
+            f.draw(c, zx + 14, zy + 6, t, LILAC, 13.0, true);
+        }
+        // A held hot cue button fills up beside the needle until its cue is set, then
+        // empties in red, with an x, until it's removed.
         let mut hy = zy + 4;
         for n in 0..cues::N {
-            if let Some(k) = self.cues.progress(n) {
+            if let Some(hold) = self.cues.progress(n) {
                 let (bw, bh) = (34, 16);
                 let bx = zx + zw / 2 + 6;
-                c.boxed(bx, hy, bw, bh, CHIP, cues::COLORS[n]);
-                c.rect(bx + 1, hy + 1, ((bw - 2) as f32 * k) as i32, bh - 2, cues::COLORS[n]);
-                f.draw(c, bx + 4, hy, &(n + 1).to_string(), WHITE, 12.0, true);
+                let (k, col, label) = match hold {
+                    cues::Hold::Setting(k) => (k, cues::COLORS[n], format!("{}", n + 1)),
+                    cues::Hold::Removing(k) => (k, RED, format!("{} \u{f00d}", n + 1)),
+                };
+                c.boxed(bx, hy, bw, bh, CHIP, col);
+                c.rect(bx + 1, hy + 1, ((bw - 2) as f32 * k) as i32, bh - 2, col);
+                f.draw(c, bx + 4, hy, &label, WHITE, 12.0, true);
                 hy += bh + 3;
             }
         }
@@ -3198,15 +3247,6 @@ fn pic_state(path: &Option<PathBuf>) -> (String, u32) {
 }
 
 /// Which hot cue a key is.
-fn cue_key(code: KeyCode) -> Option<usize> {
-    match code {
-        KeyCode::F2 => Some(0),
-        KeyCode::F3 => Some(1),
-        KeyCode::F4 => Some(2),
-        _ => None,
-    }
-}
-
 /// A hot cue's line on a waveform, with its number in a tab at the top.
 fn cue_marker(c: &mut Canvas, f: &mut text::Fonts, x: i32, y: i32, h: i32, n: usize) {
     let col = cues::COLORS[n];
@@ -3517,7 +3557,9 @@ fn main() -> anyhow::Result<()> {
         desk: desk::Desk::new(!wayland),
         ignored_buttons: Vec::new(),
         wayland,
+        x11_scale: (!wayland).then(x11_scale),
         focused: true,
+        fixing_beat: false,
         direct: None,
         direct_prev: (0.0, 0.0),
         direct_angle: 0.0,

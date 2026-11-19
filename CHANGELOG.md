@@ -1,5 +1,14 @@
 # What's new in CUT
 
+## 0.9.0
+- Fewer keys. The keyboard now only has what you reach for while playing: **Space** (fader), **Shift** (hold), **M**, **C**, **F2 F3 F4**, **Up**/**Down**, **R**, **T**, **I**, **O**, **W**, **,** **.**, **S**, **A**, **Z**, **G**, **Y**, **B**, **F12**, **Backslash** (freeze the strip), **H**, **F11** and **Ctrl+Q**. Everything else (scratch feel, sound, save format, profiles, folders, devices, backing volume, pictures and the rest of the view) is in the menus, so a stray key can't change your setup mid-scratch. **J**, **K** and **L** no longer work the fader, and **Enter** and **Backspace** no longer double as motor and back to cue.
+- Menu items that step a value (volume, sensitivity, smoothing, BPM, tempo, dim, strip zoom) keep the menu open, so you can click them again and again.
+- Fixing the beat has its own mode. Choose **Backing > Fix the beat**: the beat keys (**/** to tap, **7** **8**, **;** **'**, **9** **0**, **1**) work, and a strip over the lower waveform lists them, until you press **Esc**. The rest of the time they do nothing, so a stray press can't move your beat.
+- Remove a hot cue: hold its button (or **F2**-**F4**) for three seconds. At one second the cue is set as before; keep holding and its box empties in red, and at three seconds the cue is gone.
+- More for your device buttons: whole sample, trainer strip on/off, freeze the strip, fix the beat and tap the beat can now go on any button in **File > Devices**. Device buttons no longer depend on the keyboard, so your setups keep working.
+- The key guide (**H**) only shows the keys that still do something, and the menus show a key only for the commands that have one.
+- Fixed: on X11, CUT could open twice as large as it should on laptops with a small, sharp screen (such as a 14" 1080p panel). It now only scales up on X11 when you've set `Xft.dpi`.
+
 ## 0.8.0
 - CUT runs natively on Wayland. On a Wayland desktop (GNOME, KDE Plasma, Sway, Hyprland and others) it opens as a proper Wayland window instead of going through XWayland, and the touchpad and tablet work as they do on X11.
 - On a touchpad, scratching with two fingers no longer also scrolls, and taps on the record no longer click, on Wayland too. The one difference from X11: with the pointer resting over another window while you scratch, that window may scroll.

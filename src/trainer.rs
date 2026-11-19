@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 
 use rtrb::Consumer;
-use winit::keyboard::KeyCode;
+use crate::cmd::Cmd;
 
 use crate::engine::{Trace, TRACE_HZ};
 use crate::text::Fonts;
@@ -62,20 +62,20 @@ impl Trainer {
 
 impl App {
     /// The trainer's keys. False when the key isn't one of them.
-    pub fn trainer_command(&mut self, code: KeyCode) -> bool {
-        match code {
-            KeyCode::F12 => {
+    pub fn trainer_command(&mut self, cmd: Cmd) -> bool {
+        match cmd {
+            Cmd::Trainer => {
                 let t = &mut self.trainer;
                 t.on = !t.on;
                 t.frozen = false;
                 t.pts.clear();
                 self.say(if self.trainer.on { "trainer strip on: your scratching against the beat. \\ freezes it" } else { "trainer strip off" });
             }
-            KeyCode::Backslash if self.trainer.on => {
+            Cmd::FreezeStrip if self.trainer.on => {
                 self.trainer.frozen = !self.trainer.frozen;
                 self.say(if self.trainer.frozen { "strip frozen - \\ carries on" } else { "strip running" });
             }
-            KeyCode::Backquote if self.trainer.on => {
+            Cmd::ZoomStrip if self.trainer.on => {
                 let t = &mut self.trainer;
                 let i = ZOOMS.iter().position(|&z| z == t.beats).unwrap_or(0);
                 t.beats = ZOOMS[(i + 1) % ZOOMS.len()];

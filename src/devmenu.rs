@@ -325,7 +325,7 @@ impl App {
         // Startup finds everything at once; only point out what's plugged in later.
         if fresh && self.started.elapsed() > Duration::from_secs(3) {
             if nice {
-                self.say(format!("new device: {name} - press X to set it up"));
+                self.say(format!("new device: {name} - set it up in File > Devices"));
             } else if readable && self.dev_profiles.contains_key(&id) {
                 self.say(format!("{name} ready"));
             }
@@ -438,9 +438,9 @@ impl App {
                         *acc += turned(b, value, prev, range);
                         let n = (*acc / step).trunc();
                         *acc -= n * step;
-                        let code = if n > 0.0 { KeyCode::ArrowUp } else { KeyCode::ArrowDown };
+                        let cmd = if n > 0.0 { crate::cmd::Cmd::VolumeUp } else { crate::cmd::Cmd::VolumeDown };
                         for _ in 0..(n.abs() as usize).min(20) {
-                            self.command(code);
+                            self.command(cmd);
                         }
                     }
                 },
@@ -452,9 +452,9 @@ impl App {
                         self.cue_up(n, live);
                     }
                 }
-                Action::Cmd(code) => {
+                Action::Cmd(cmd) => {
                     if pressed(b, value, range, 0.5) && !was && live {
-                        self.command(code);
+                        self.command(cmd);
                     }
                 }
                 _ => {}

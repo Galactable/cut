@@ -3,7 +3,7 @@
 
 use std::time::Instant;
 
-use winit::keyboard::KeyCode;
+use crate::cmd::Cmd;
 
 use crate::beat::{self, Grid};
 use crate::engine::Msg;
@@ -51,10 +51,10 @@ impl App {
     }
 
     /// The beat keys. False when the key isn't one of them.
-    pub fn beat_command(&mut self, code: KeyCode) -> bool {
-        match code {
-            KeyCode::Slash => self.tap(),
-            KeyCode::Digit1 => {
+    pub fn beat_command(&mut self, cmd: Cmd) -> bool {
+        match cmd {
+            Cmd::Tap => self.tap(),
+            Cmd::Redetect => {
                 let found = self.beat.as_ref().and_then(|a| a.grid);
                 if let (Some(p), Some(b)) = (&self.backing_path, &self.backing) {
                     beat::saved::set(p, b.len(), None);
@@ -63,36 +63,36 @@ impl App {
                 self.send_grid();
                 match (found, self.backing.is_some()) {
                     (Some(g), _) => self.say(format!("beat detected again: {:.1} BPM", g.bpm)),
-                    (None, true) => self.say("no steady beat found - play the track and tap / on the beat, starting on beat one"),
+                    (None, true) => self.say("no steady beat found - use Backing > Fix the beat: play the track and tap / on the beat, starting on beat one"),
                     (None, false) => self.say("load a backing track first (Y)"),
                 }
             }
-            KeyCode::Digit7 | KeyCode::Digit8 | KeyCode::Semicolon | KeyCode::Quote => {
+            Cmd::HalfTempo | Cmd::DoubleTempo | Cmd::BeatsEarlier | Cmd::BeatsLater => {
                 let Some(g) = self.grid else {
-                    self.say("no beat grid yet - play the backing track and tap / on the beat");
+                    self.say("no beat grid yet - use Backing > Fix the beat: play the track and tap / on the beat");
                     return true;
                 };
-                let new = match code {
-                    KeyCode::Digit7 => Grid { bpm: g.bpm / 2.0, ..g },
-                    KeyCode::Digit8 => Grid { bpm: g.bpm * 2.0, ..g },
+                let new = match cmd {
+                    Cmd::HalfTempo => Grid { bpm: g.bpm / 2.0, ..g },
+                    Cmd::DoubleTempo => Grid { bpm: g.bpm * 2.0, ..g },
                     _ => {
-                        let dir = if code == KeyCode::Quote { 1.0 } else { -1.0 };
+                        let dir = if cmd == Cmd::BeatsLater { 1.0 } else { -1.0 };
                         // With Ctrl: a whole beat, which changes which beat is one.
                         Grid { first: g.first + dir * if self.ctrl { g.period() } else { NUDGE_SECS }, ..g }
                     }
                 };
                 self.correct_grid(new);
-                match code {
-                    KeyCode::Digit7 | KeyCode::Digit8 => self.say(format!("beat: {:.1} BPM", new.bpm.clamp(30.0, 300.0))),
+                match cmd {
+                    Cmd::HalfTempo | Cmd::DoubleTempo => self.say(format!("beat: {:.1} BPM", new.bpm.clamp(30.0, 300.0))),
                     _ if self.ctrl => self.say("beat one moved by a beat"),
-                    KeyCode::Quote => self.say("beats 5 ms later"),
+                    Cmd::BeatsLater => self.say("beats 5 ms later"),
                     _ => self.say("beats 5 ms earlier"),
                 }
             }
             // With a grid, the BPM keys fine-tune the track's tempo instead of the free click.
-            KeyCode::Digit9 | KeyCode::Digit0 if self.grid.is_some() => {
+            Cmd::BpmDown | Cmd::BpmUp if self.grid.is_some() => {
                 let g = self.grid.unwrap();
-                let d = if code == KeyCode::Digit0 { 1.0 } else { -1.0 } * if self.ctrl { 1.0 } else { 0.1 };
+                let d = if cmd == Cmd::BpmUp { 1.0 } else { -1.0 } * if self.ctrl { 1.0 } else { 0.1 };
                 let bpm = ((g.bpm + d) * 10.0).round() / 10.0;
                 let here = self.backing_secs().unwrap_or(g.first);
                 self.correct_grid(g.retimed(bpm, here));
