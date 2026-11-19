@@ -1,0 +1,41 @@
+name: I'm using CUT
+description: Say hello and tell me what you scratch with. It's the only way I know anyone's using it.
+title: "Using CUT: "
+labels: ["using cut"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying CUT! Knowing what people play it with tells me which hardware to look after. Only the first question is needed.
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: What do you scratch with?
+      multiple: true
+      options:
+        - Laptop touchpad
+        - Drawing tablet (touch surface)
+        - MIDI DJ controller
+        - Other MIDI controller
+        - Gamepad or joystick
+        - Dial, knob or wheel
+        - Mouse
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Make and model
+      description: Of the laptop, tablet or controller, if you know it.
+      placeholder: "ThinkPad T14, Wacom Intuos Pro M, Pioneer DDJ-400..."
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
+      description: What you use it for, what you like, what you'd change.
+  - type: input
+    id: distro
+    attributes:
+      label: Linux distro
+      placeholder: "Arch, Ubuntu 24.04, Fedora 41..."

@@ -302,6 +302,7 @@ Use wired headphones or the laptop speakers. Bluetooth headphones add 150 ms or 
 
 ## Share your setup, report a problem
 
+- **Using CUT?** [Say hello](https://github.com/Galactable/cut/issues/new?template=using-cut.yml) and tell me what you scratch with: touchpad, tablet, controller or something else. It's the only way I know anyone's using it, and it shows me which hardware to look after.
 - **Set up a controller, tablet or other device?** [Share its setup](https://github.com/Galactable/cut/issues/new?template=device-setup.yml). The form asks for the file from `~/.config/cut/devices/` and which control does what. Shared setups can become built-in, so the next person with that device doesn't have to learn it.
 - **Something not working?** [Report it](https://github.com/Galactable/cut/issues/new?template=bug-report.yml). Starting CUT from a terminal and pasting what it prints helps a lot.
 
