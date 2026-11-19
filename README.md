@@ -91,7 +91,7 @@ Whichever way you install, audio files keep opening in your usual player, and CU
 Start CUT from your app launcher, or from a terminal:
 
 ```bash
-cut-deck "path/to/sample.wav"                   # installed (download or AUR)
+cut-deck "path/to/sample.wav"                   # installed (download or package)
 ./target/release/cut-deck "path/to/sample.wav"  # built from source, in the cut folder
 ```
 
@@ -99,7 +99,7 @@ You can also start it with no file and drop a file onto the window (X11 only for
 
 ## Quick start: scratch a sample over a beat
 
-1. **Load the sample you want to scratch.** Press **O** (or drop the file onto the window), or press **W** to [record it from a video or film](#sample-from-a-video-or-film-w). Drag across the top waveform to pick the part that goes on the record: a word, a stab, an "ahh".
+1. **Load the sample you want to scratch.** Press **O** (or drop the file onto the window, on X11), or press **W** to [record it from a video or film](#sample-from-a-video-or-film-w). Drag across the top waveform to pick the part that goes on the record: a word, a stab, an "ahh".
 2. **Load the beat.** Press **Y** and choose a beat or a whole song. It plays under the record and loops.
 3. **Start both.** Press **B** to play the beat and **M** to start the record turning.
 4. **Scratch.** Put your hand on the record (two fingers on a touchpad, one on a tablet, a jog wheel, or a mouse drag) and cut with the crossfader (**Space**, or a button you set up in **File > Devices**). The crossfader only cuts the record, so the beat keeps playing.
@@ -132,6 +132,8 @@ CUT can record whatever your computer is playing and put it straight on the reco
 - **Your fingers control the record's position, not its speed.** It's the same as a hand on vinyl, so speed comes from how you move.
 - **The record sits on a slipmat.** The motor keeps turning underneath, so letting go speeds the record up in about 12 ms, and motor start/stop spin up and down like a Technics.
 - **It plays through a modelled cartridge and phono stage.** The groove is cut with RIAA EQ and read back as stylus velocity. Slow drags sound bassy and soft, fast cuts sound bright and punchy, and holding still is silent. **Sound > Vinyl EQ** turns this off so you can compare.
+- **Surface noise, if you want it.** **Sound > Surface noise** (off to start) adds hiss and crackle. It's cut into the groove with the sample, so it gets scratched along with it.
+- **33 or 45.** **Deck > 33 rpm** and **45 rpm** set the motor speed. At 45 the record plays 35% faster, and higher.
 - **Fast scratches don't alias.** The resampler's filter follows the speed, so you don't get the usual digital fizz.
 - **Touch movement is smoothed.** Touch surfaces report 100-130 times a second. Each point is glided to and passed through a spring, so you hear motion instead of a stair-step buzz. **Scratch > Smoother** and **Snappier** set how much smoothing there is.
 
@@ -153,7 +155,8 @@ Open **File > Devices** to see every input device CUT can use, including ones pl
 The ExpressKeys and touch ring work as soon as the tablet is plugged in, once CUT can read the tablet (run `./input-access.sh` once, or unlock the pad from **File > Devices**). The pad comes set up with the layout below, and you can change it in **File > Devices**. On X11, `tablet-setup.sh` still works if you prefer the desktop to handle the keys (on Wayland the desktop's own tablet settings do that):
 
 ```bash
-./tablet-setup.sh
+./tablet-setup.sh                          # from the cut folder or the extracted download
+/usr/share/cut-deck/tablet-setup.sh        # with the Arch package
 ```
 
 - **One fingertip** on the tablet's touch surface is your hand on the record. While CUT is focused the desktop ignores the touch surface, so it's scratch-only; switch away or quit and it's a normal touch surface again. Quick taps work for stops and skips.
@@ -163,13 +166,13 @@ The ExpressKeys and touch ring work as soon as the tablet is plugged in, once CU
 - The 4th key, next to the ring, is the crossfader: held cuts the sound. **I** flips this to hamster mode, where held opens it.
 - The button in the middle of the touch ring holds the record, and the 4 keys below the ring are back to cue, record take, click and motor. The touch ring is volume. Change any of it in **File > Devices**.
 - Hot cues are cleared when you load another file. Picking a new section keeps the ones that are still inside it.
-- To undo the tablet setup: `./tablet-setup.sh --reset`.
+- To undo the tablet setup: run `tablet-setup.sh --reset`.
 
 The whole touch surface is scratch area whatever size the window is; CUT reads the tablet directly. **Scratch > Scratch motion** switches between AUTO, left/right, up/down and circular platter motion.
 
 ## Laptop touchpad
 
-One-time setup from the `cut` folder (or the extracted download), so CUT can see your fingers directly (asks for your sudo password). The AUR package already includes it:
+One-time setup from the `cut` folder (or the extracted download), so CUT can see your fingers directly (asks for your sudo password). The Arch package already includes it:
 
 ```bash
 ./input-access.sh
@@ -187,6 +190,7 @@ This only gives read access to touchpads, tablets, tablet pads and gamepads. Key
 
 - Each input (touchpad, tablet touch, mouse, controllers) has its own sensitivity, and the touch surfaces and mouse have their own scratch motion. The sensitivity and scratch motion items in the **Scratch** menu change the one you used last. They're saved in `~/.config/cut/settings.txt`.
 - **Scratch > Less / More sensitive** change sensitivity (shown as x1.00; the menu stays open while you click). Controllers share one setting, and each device has its own on top of it (see **File > Devices**). At x1.00 a quarter-second scratch is about 1.6 cm on the touchpad and 5 cm on the tablet.
+- **Scratch > Flip direction** swaps which way is forward, for every input at once (devices also have their own direction in **File > Devices**).
 - **Scratch > Smoother / Snappier** change smoothing: lower feels heavier, higher feels snappier. The status bar shows the current value as SMOOTH.
 - **Up** / **Down** set the record's volume, up to 150%. VOL turns red above 100%: from there CUT's limiter squashes loud peaks, in your takes too, so keep it at 100% or below for clean takes. A knob or slider set up in **File > Devices** covers the same range.
 - **Scratch > Scratch motion** switches it: AUTO (follows whatever line you scratch along, right/up = forward), left/right, up/down, or PLATTER (circle round the centre of the tablet, clockwise = forward, one turn = 1.8 s like a real 33). Tablet touch defaults to platter, and a dot on the on-screen record shows where your finger is.
@@ -236,7 +240,7 @@ The keyboard only has what you reach for while playing; everything else is in th
 - **,** and **.** step to the previous and next sample in the same folder.
 - **W** records whatever the computer is playing and puts it on the record: see [Sample from a video or film](#sample-from-a-video-or-film-w). Recordings are kept in `<samples folder>/Captures`.
 - **R** starts or stops a take of CUT's own output (after the fader and volume; never the click or other apps, and the backing track only if **Backing > Record it into takes** is on), saved to the takes folder (default `~/Music/CUT/Takes`). Takes are 32-bit float WAV; **File > Save format** switches saved sections and takes to 320 kbps MP3. The file is saved as you go, so a crash or a forced quit mid-take keeps everything up to the last half second. A take that stays completely silent (motor off, or the fader cut the whole time) isn't kept.
-- **T** turns on the click, and **Takes > BPM down / up** change its BPM (hold Ctrl as you click for steps of 10). With the click on, a take starts on the next bar, so it lines up when you drop it at a bar in FL. The click is never recorded. With a backing track loaded, the click follows the track's beat instead: see [The beat](#the-beat).
+- **T** turns on the click, and **Takes > BPM down / up** change its BPM (hold Ctrl as you click for steps of 10). Once a backing track's beat is found, they fine-tune the track's tempo instead, by 0.1 BPM (1 with Ctrl). With the click on, a take starts on the next bar, so it lines up when you drop it at a bar in FL. The click is never recorded. With a backing track loaded, the click follows the track's beat instead: see [The beat](#the-beat).
 
 ## Backing track
 

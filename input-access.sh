@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Lets the logged-in user read touchpads and drawing tablets directly, so CUT
-# can see finger contact and exact pen positions. Keyboards and mice stay root-only.
+# Lets the logged-in user read touchpads, drawing tablets, tablet pads and gamepads directly,
+# so CUT can see finger contact and exact positions. Keyboards and mice stay root-only.
 #   ./input-access.sh           install (asks for your sudo password)
 #   ./input-access.sh --remove  undo (also takes back access given from CUT's Devices menu)
 set -euo pipefail

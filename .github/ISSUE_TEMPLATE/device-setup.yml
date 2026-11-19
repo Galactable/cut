@@ -62,7 +62,7 @@ body:
     attributes:
       label: CUT version
       description: Bottom right of CUT's status bar, or `cut-deck --version`.
-      placeholder: "0.3.4"
+      placeholder: "0.9.3"
   - type: input
     id: distro
     attributes:
