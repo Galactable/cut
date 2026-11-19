@@ -1,5 +1,9 @@
 # What's new in CUT
 
+## 0.9.4
+- The Backing menu is shorter: the beat fixes (tap, half and double tempo, earlier and later, detect again) only show while **Backing > Fix the beat** is on. Turning it on keeps the menu open, so you see them appear with their keys.
+- **Takes > BPM down / up** no longer show **9** and **0** beside them, since those keys only work while fixing the beat.
+
 ## 0.9.3
 - Fixed: when a take couldn't be saved (say, the takes folder can't be written to), a moment of it turned up at the start of your next take.
 - Fixed: a **|** in a name typed into the save form pushed the rest of the form along, so the sample could land in the wrong folder.

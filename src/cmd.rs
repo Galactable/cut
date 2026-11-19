@@ -139,9 +139,18 @@ pub fn for_key(code: KeyCode, fixing: bool) -> Option<Cmd> {
     KEYS.iter().chain(beat).find(|(k, _, _)| *k == code).map(|&(_, c, _)| c)
 }
 
-/// How a command's key is shown in the menus: blank for commands without one.
-pub fn key_name(cmd: Cmd) -> &'static str {
-    KEYS.iter().chain(BEAT_KEYS).find(|(_, c, _)| *c == cmd).map_or("", |&(_, _, n)| n)
+/// How a command's key is shown in the menus: blank for commands without one, and for
+/// the beat keys unless they're on (`fixing`).
+pub fn key_name(cmd: Cmd, fixing: bool) -> &'static str {
+    let beat = if fixing { BEAT_KEYS } else { &[] };
+    KEYS.iter().chain(beat).find(|(_, c, _)| *c == cmd).map_or("", |&(_, _, n)| n)
+}
+
+/// Backing menu items that only make sense while fixing the beat, so the menu hides
+/// them the rest of the time.
+pub fn fixes_beat(cmd: Cmd) -> bool {
+    use Cmd::*;
+    matches!(cmd, Tap | HalfTempo | DoubleTempo | BeatsEarlier | BeatsLater | Redetect)
 }
 
 #[cfg(test)]

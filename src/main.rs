@@ -96,7 +96,7 @@ const MENUS: &[(&str, &[(&str, Cmd)])] = &[
         ("Volume down", Cmd::BackingQuieter),
         ("Volume up", Cmd::BackingLouder),
         ("Record it into takes", Cmd::BackingInTakes),
-        ("Fix the beat (keys on)", Cmd::FixBeat),
+        ("Fix the beat", Cmd::FixBeat),
         ("Tap the beat (start on one)", Cmd::Tap),
         ("Half tempo", Cmd::HalfTempo),
         ("Double tempo", Cmd::DoubleTempo),
@@ -1068,15 +1068,23 @@ impl App {
         }
     }
 
+    /// The items menu `i` shows right now: the beat-fixing items only appear while
+    /// Backing > Fix the beat is on.
+    fn menu_items(&self, i: usize) -> Vec<(&'static str, Cmd)> {
+        MENUS[i].1.iter().copied().filter(|&(_, c)| self.fixing_beat || !cmd::fixes_beat(c)).collect()
+    }
+
     fn open_bar(&mut self, i: usize) {
         self.bar.open = Some(i);
         self.bar.sel = 0;
     }
 
     /// Runs a menu item: the same as pressing its key.
-    /// A menu item was chosen. Items that step a value keep the menu open for another go.
+    /// A menu item was chosen. Items that step a value keep the menu open for another go,
+    /// and so does turning on Fix the beat, so you see the fixes and their keys appear.
     fn run_item(&mut self, cmd: Cmd) {
-        if !cmd.steps() {
+        let shows_fixes = cmd == Cmd::FixBeat && !self.fixing_beat;
+        if !cmd.steps() && !shows_fixes {
             self.bar.open = None;
         }
         if cmd == Cmd::Quit {
@@ -1091,7 +1099,7 @@ impl App {
     fn bar_key(&mut self, code: KeyCode) -> bool {
         let Some(open) = self.bar.open else { return false };
         let n = MENUS.len();
-        let items = MENUS[open].1;
+        let items = self.menu_items(open);
         match code {
             KeyCode::ArrowLeft => self.open_bar((open + n - 1) % n),
             KeyCode::ArrowRight => self.open_bar((open + 1) % n),
@@ -1129,7 +1137,9 @@ impl App {
         let (dx, dy, dw, dh) = self.bar.drop;
         if x >= dx as f64 && x < (dx + dw) as f64 && y >= dy as f64 && y < (dy + dh) as f64 {
             if let Some(r) = self.bar.rows.iter().position(|&(a, b)| y >= a as f64 && y < b as f64) {
-                self.run_item(MENUS[open].1[r].1);
+                if let Some(&(_, cmd)) = self.menu_items(open).get(r) {
+                    self.run_item(cmd);
+                }
             }
         } else {
             self.bar.open = None;
@@ -2407,7 +2417,7 @@ impl App {
     /// The open menu's dropdown, drawn over everything else.
     fn draw_dropdown(&mut self, c: &mut Canvas, f: &mut text::Fonts) {
         let Some(open) = self.bar.open else { return };
-        let items = MENUS[open].1;
+        let items = self.menu_items(open);
         let (w, h) = (c.w as i32, c.h as i32);
         let px = 15.0;
         let row_h = 30;
@@ -2415,7 +2425,7 @@ impl App {
         let lw = items.iter().map(|(l, _)| f.width(l, px, false)).max().unwrap_or(0);
         let sw = states.iter().map(|s| s.as_ref().map_or(0, |(t, _)| f.width(t, 13.0, false))).max().unwrap_or(0);
         // Most commands have no key now; the key column only shows for those that do.
-        let kw = items.iter().map(|(_, c)| f.width(cmd::key_name(*c), 13.0, true)).max().unwrap_or(0);
+        let kw = items.iter().map(|(_, c)| f.width(cmd::key_name(*c, self.fixing_beat), 13.0, true)).max().unwrap_or(0);
         let kw = if kw > 0 { kw + 12 } else { 0 };
         let dw = (16 + lw + 24 + sw + 16 + kw + 14).min(w - 16);
         let dh = (items.len() as i32 * row_h + 12).min(h - BAR_H - 8);
@@ -2426,7 +2436,7 @@ impl App {
         self.bar.rows.clear();
         let mut y = dy + 6;
         for (i, ((label, item), state)) in items.iter().zip(&states).enumerate() {
-            let key = cmd::key_name(*item);
+            let key = cmd::key_name(*item, self.fixing_beat);
             self.bar.rows.push((y, y + row_h));
             let sel = i == self.bar.sel;
             if sel {

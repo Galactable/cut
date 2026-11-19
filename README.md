@@ -267,7 +267,7 @@ A backing track is a beat or song that plays under the record while you scratch.
 
 - **CUT finds the track's beat when it loads:** its tempo and where its bars start. The status bar shows the BPM next to BACKING.
 - **The click follows it.** While the backing track plays, **T** clicks on the track's own beat, and the status bar says **CLICK ON THE BEAT**. With the track paused, the click runs free at its own BPM.
-- **If the beat is wrong, fix it.** Choose **Backing > Fix the beat** (or give "Fix the beat" a device button). The keys below then work, and a strip over the lower waveform lists them, until you press **Esc**. The rest of the time they do nothing, so a stray press can't move your beat. Every fix is also in the Backing menu.
+- **If the beat is wrong, fix it.** Choose **Backing > Fix the beat** (or give "Fix the beat" a device button). The keys below then work, and a strip over the lower waveform lists them, until you press **Esc**. The rest of the time they do nothing, so a stray press can't move your beat. While it's on, every fix is also in the Backing menu; the rest of the time the menu hides them.
 - **Tap it in:** play the track and tap **/** on the beat, starting on beat one. From the fourth tap the beat follows your taps.
 - **Small fixes:** **7** and **8** halve and double the tempo (for when CUT hears it twice as fast or slow), **;** and **'** slide the beats 5 ms earlier or later, and with Ctrl a whole beat, which changes which beat counts as one. **9** and **0** fine-tune the tempo by 0.1 BPM (with Ctrl, 1).
 - **1** throws your corrections away and goes back to what CUT found.
