@@ -11,11 +11,25 @@
 //!   ~300 ms). Moving the pointer off the window brings tapping straight back, so you can
 //!   tap another window to switch to it.
 //! Everything is restored on exit, on a panic, and when killed.
+//!
+//! On Wayland there's no `xinput`: each desktop sets up its own input, and an app can't
+//! change it. There the desktop's scrolls and clicks only reach CUT when the pointer is
+//! over its window, so CUT ignores the ones made from touches it's using instead: scrolling
+//! while two fingers scratch, and clicks made from taps while tap-to-click would be off.
 
 use std::{
     process::Command,
-    sync::{mpsc, Mutex},
+    sync::{atomic::Ordering::Relaxed, mpsc, Mutex},
+    time::{Duration, Instant},
 };
+
+use crate::input::{micros, PAD};
+
+/// Desktop scrolling still arriving this long after two fingers let go is from the scratch.
+const WHEEL_TAIL: Duration = Duration::from_millis(150);
+/// The desktop's click from a tap arrives this soon after the finger lifts (or with the
+/// second touch of a tap-and-drag).
+const TAP_CLICK_US: u64 = 350_000;
 
 const SEND_EVENTS: &str = "libinput Send Events Mode Enabled";
 const TAPPING: &str = "libinput Tapping Enabled";
@@ -36,18 +50,27 @@ pub struct Desk {
     tappers: Vec<String>,
     tablet_touch: Vec<String>,
     tx: mpsc::Sender<Vec<String>>,
+    /// Running on X11, where `xinput` can do all this; otherwise (Wayland) CUT only ignores
+    /// what the desktop makes of the touches.
+    x11: bool,
     paused: bool,
+    /// When two fingers last let go of the record.
+    unpaused_at: Option<Instant>,
     taken: bool,
     taps_off: bool,
 }
 
 impl Desk {
-    pub fn new() -> Self {
-        let names = Command::new("xinput")
-            .args(["list", "--name-only"])
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-            .unwrap_or_default();
+    pub fn new(x11: bool) -> Self {
+        let names = if !x11 {
+            String::new()
+        } else {
+            Command::new("xinput")
+                .args(["list", "--name-only"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+                .unwrap_or_default()
+        };
         let mut touchpads = Vec::new();
         let mut tappers = Vec::new();
         let mut tablet_touch = Vec::new();
@@ -107,7 +130,7 @@ impl Desk {
             restore_all();
             prev(info);
         }));
-        Desk { touchpads, tappers, tablet_touch, tx, paused: false, taken: false, taps_off: false }
+        Desk { touchpads, tappers, tablet_touch, tx, x11, paused: false, unpaused_at: None, taken: false, taps_off: false }
     }
 
     fn run(&self, args: &[&str]) {
@@ -120,6 +143,9 @@ impl Desk {
             return;
         }
         self.paused = pause;
+        if !pause {
+            self.unpaused_at = Some(Instant::now());
+        }
         let v = if pause { "1" } else { "0" };
         for t in &self.touchpads {
             self.run(&["set-prop", t, SEND_EVENTS, v, "0"]);
@@ -148,6 +174,23 @@ impl Desk {
         for t in &self.tappers {
             self.run(&["set-prop", t, TAPPING, if off { "0" } else { "1" }]);
         }
+    }
+}
+
+impl Desk {
+    /// Wayland: a scroll the desktop made from two fingers scratching the record.
+    pub fn ignore_wheel(&self) -> bool {
+        !self.x11 && (self.paused || self.unpaused_at.is_some_and(|t| t.elapsed() < WHEEL_TAIL))
+    }
+
+    /// Wayland: a click the desktop made from fingers on the record, or from a tap where
+    /// X11 would have had tap-to-click off. A press of the touchpad's own button is real.
+    pub fn ignore_press(&self) -> bool {
+        if self.x11 || PAD.click.load(Relaxed) {
+            return false;
+        }
+        let since_tap = micros(std::time::SystemTime::now()).saturating_sub(PAD.tap_end.load(Relaxed));
+        self.paused || (self.taps_off && since_tap < TAP_CLICK_US)
     }
 }
 

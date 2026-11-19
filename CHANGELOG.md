@@ -1,5 +1,13 @@
 # What's new in CUT
 
+## 0.8.0
+- CUT runs natively on Wayland. On a Wayland desktop (GNOME, KDE Plasma, Sway, Hyprland and others) it opens as a proper Wayland window instead of going through XWayland, and the touchpad and tablet work as they do on X11.
+- On a touchpad, scratching with two fingers no longer also scrolls, and taps on the record no longer click, on Wayland too. The one difference from X11: with the pointer resting over another window while you scratch, that window may scroll.
+- Sharp on high-resolution screens. With your desktop's scaling at 150% or more, CUT draws everything twice as large (three times from 250%), so text and the waveforms are no longer tiny. `CUT_SCALE=1` (or 2, 3) picks the size yourself.
+- The launcher entry and icon are now called `cut-deck`, matching the window, so Wayland desktops show CUT's icon in the dock and taskbar. Run `./install-desktop.sh` again to update it; the old entry is removed.
+- Not yet on Wayland: dropping a file onto the window. Press **O** to open one.
+- `tablet-setup.sh` is for X11. On Wayland it says so and points you to the Devices menu (**X**), where the ExpressKeys are already set up.
+
 ## 0.7.0
 - The trainer strip. Press **F12** and the lower waveform becomes a picture of your scratching against the beat: time runs right to left past a green "now" line, height is where the record is in the sample, and the upright lines are the beats, with each bar's first beat brightest. The line is green while your hand is on the record, lilac while it plays by itself and grey while the fader is closed, and a white dot marks every change of direction, so you can see whether your scratches land on the beat.
 - **Backslash** freezes the strip so you can look at what you just played, and **backtick** (the key under Esc) changes how much it shows: 4, 8, 16 or 32 beats. All three are in the View menu.

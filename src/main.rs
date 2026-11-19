@@ -30,7 +30,6 @@ use anyhow::Context;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use winit::{
     application::ApplicationHandler,
-    platform::x11::WindowAttributesExtX11,
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
@@ -347,6 +346,30 @@ struct Layout {
 }
 
 /// Starting layout until the first frame is painted (paint() owns the real one).
+/// The whole-number UI scale for a screen scale factor: 1 up to 149%, 2 from 150% to
+/// 249%, and so on. Whole numbers keep text and lines sharp. CUT_SCALE overrides it.
+fn ui_scale(factor: f64) -> u32 {
+    if let Some(k) = std::env::var("CUT_SCALE").ok().and_then(|v| v.trim().parse::<u32>().ok()) {
+        return k.clamp(1, 4);
+    }
+    (factor.round() as u32).clamp(1, 4)
+}
+
+/// Draws `src` (`sw` wide) `k` times larger into `dst` (`dw` x `dh`), cropping the edges
+/// that don't fit.
+fn upscale(src: &[u32], sw: usize, dst: &mut [u32], dw: usize, dh: usize, k: usize) {
+    let mut row = vec![0u32; dw];
+    for (sy, chunk) in dst.chunks_mut(dw * k).take(dh.div_ceil(k)).enumerate() {
+        let line = &src[sy * sw..(sy + 1) * sw];
+        for (x, p) in row.iter_mut().enumerate() {
+            *p = line[x / k];
+        }
+        for out in chunk.chunks_mut(dw) {
+            out.copy_from_slice(&row);
+        }
+    }
+}
+
 fn layout(w: i32, h: i32) -> Layout {
     let overview = (12, 58, w - 24, 70);
     let top = 298.0;
@@ -358,6 +381,12 @@ fn layout(w: i32, h: i32) -> Layout {
 struct App {
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
+    /// Whole-number UI scale for high-resolution screens: everything is drawn at the
+    /// window's size divided by this, into `frame`, then each pixel is drawn this many
+    /// times wider and taller. 1 draws straight into the window.
+    ui_scale: u32,
+    /// The scaled-down frame (when `ui_scale` > 1): (width, height, pixels).
+    frame: (usize, usize, Vec<u32>),
     tx: rtrb::Producer<Msg>,
     trash: rtrb::Consumer<Arc<Record>>,
     shared: Arc<Shared>,
@@ -414,7 +443,11 @@ struct App {
     lay: Layout,
     fonts: text::Fonts,
     desk: desk::Desk,
+    /// Mouse buttons whose press was ignored (desk.rs), so their release is too.
+    ignored_buttons: Vec<MouseButton>,
     focused: bool,
+    /// Running as a native Wayland window (not X11 or XWayland).
+    wayland: bool,
     /// Pen or touch currently holding the record through direct input.
     direct: Option<Kind>,
     direct_prev: (f64, f64),
@@ -2261,13 +2294,36 @@ impl App {
         let Some(mut surface) = self.surface.take() else { return };
         let size = win.inner_size();
         let (w, h) = (size.width.max(1), size.height.max(1));
+        let k = ui_scale(win.scale_factor());
+        if k != self.ui_scale {
+            // The pointer was last reported at the old scale.
+            self.cursor = (self.cursor.0 * self.ui_scale as f64 / k as f64, self.cursor.1 * self.ui_scale as f64 / k as f64);
+            self.ui_scale = k;
+        }
         if surface.resize(NonZeroU32::new(w).unwrap(), NonZeroU32::new(h).unwrap()).is_ok() {
             if let Ok(mut buf) = surface.buffer_mut() {
-                // Age 1 = the buffer still holds the last frame, so a partial repaint is safe.
-                let partial = !full && buf.age() == 1;
-                let mut c = Canvas { px: &mut buf, w: w as usize, h: h as usize };
                 let t0 = Instant::now();
-                self.paint(&mut c, partial);
+                if k == 1 {
+                    self.frame = (0, 0, Vec::new());
+                    // Age 1 = the buffer still holds the last frame, so a partial repaint is safe.
+                    let partial = !full && buf.age() == 1;
+                    let mut c = Canvas { px: &mut buf, w: w as usize, h: h as usize };
+                    self.paint(&mut c, partial);
+                } else {
+                    let k = k as usize;
+                    let (lw, lh) = ((w as usize).div_ceil(k), (h as usize).div_ceil(k));
+                    // The small frame keeps the last picture, so partial repaints are always
+                    // safe unless it was just resized.
+                    let mut frame = std::mem::take(&mut self.frame);
+                    let partial = !full && frame.0 == lw && frame.1 == lh;
+                    if !partial || frame.2.len() != lw * lh {
+                        frame = (lw, lh, vec![0; lw * lh]);
+                    }
+                    let mut c = Canvas { px: &mut frame.2, w: lw, h: lh };
+                    self.paint(&mut c, partial);
+                    upscale(&frame.2, lw, &mut buf, w as usize, h as usize, k);
+                    self.frame = frame;
+                }
                 let t1 = Instant::now();
                 let _ = buf.present();
                 if std::env::var_os("CUT_PROFILE").is_some() {
@@ -2579,7 +2635,8 @@ impl App {
             f.draw(c, ox + ow - 6 - rw, oy + oh - 17, &r, LABEL_TEXT, 12.0, false);
         }
         if self.src.name.is_empty() {
-            let t = "drop a sample here, or press O to open one";
+            // winit can't take dropped files on Wayland yet.
+            let t = if self.wayland { "press O to open a sample" } else { "drop a sample here, or press O to open one" };
             let tw = f.width(t, 16.0, false);
             f.draw(c, ox + (ow - tw) / 2, oy + (oh - 20) / 2, t, LABEL_TEXT, 16.0, false);
         }
@@ -2861,9 +2918,11 @@ impl ApplicationHandler<InEvent> for App {
         let attrs = Window::default_attributes()
             .with_title(title)
             .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 800.0))
-            .with_window_icon(window_icon())
-            // WM_CLASS, so launchers and window rules can match the window.
-            .with_name("cut-deck", "CUT");
+            .with_window_icon(window_icon());
+        // WM_CLASS on X11, app_id on Wayland: what launchers and window rules match, and
+        // on Wayland how the desktop finds cut-deck.desktop and its icon.
+        let attrs = winit::platform::x11::WindowAttributesExtX11::with_name(attrs, "cut-deck", "CUT");
+        let attrs = winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, "cut-deck", "CUT");
         let win = Rc::new(el.create_window(attrs).expect("create window"));
         let ctx = softbuffer::Context::new(win.clone()).expect("softbuffer context");
         self.surface = Some(softbuffer::Surface::new(&ctx, win.clone()).expect("softbuffer surface"));
@@ -2883,13 +2942,32 @@ impl ApplicationHandler<InEvent> for App {
                     self.pointer_inside = true;
                     self.desk.set_taps_off(self.focused);
                 }
-                self.cursor_moved(position.x, position.y);
+                let k = self.ui_scale as f64;
+                self.cursor_moved(position.x / k, position.y / k);
             }
-            WindowEvent::MouseInput { state, button, .. } => self.mouse_button(button, state == ElementState::Pressed),
+            WindowEvent::MouseInput { state, button, .. } => {
+                let pressed = state == ElementState::Pressed;
+                // Wayland: clicks the desktop made from touches CUT is using (see desk.rs),
+                // and the releases that go with them.
+                if pressed && self.desk.ignore_press() {
+                    self.ignored_buttons.push(button);
+                    return;
+                }
+                if !pressed {
+                    if let Some(i) = self.ignored_buttons.iter().position(|&b| b == button) {
+                        self.ignored_buttons.swap_remove(i);
+                        return;
+                    }
+                }
+                self.mouse_button(button, pressed)
+            }
             WindowEvent::MouseWheel { delta, .. } => {
+                if self.desk.ignore_wheel() {
+                    return;
+                }
                 let (dx, dy) = match delta {
                     MouseScrollDelta::LineDelta(x, y) => (x as f64 * SCROLL_PX, y as f64 * SCROLL_PX),
-                    MouseScrollDelta::PixelDelta(p) => (p.x, p.y),
+                    MouseScrollDelta::PixelDelta(p) => (p.x / self.ui_scale as f64, p.y / self.ui_scale as f64),
                 };
                 // Over the top waveform the wheel zooms (up = in) and sideways scrolling pans.
                 if !self.overlay_open() && self.over_overview() && !self.src.name.is_empty() {
@@ -3380,6 +3458,8 @@ fn main() -> anyhow::Result<()> {
     recorder::spawn(shared.clone(), take_rx, out_rate, take_status.clone(), takes_dir.clone(), save_mp3.clone());
 
     let el = EventLoop::<InEvent>::with_user_event().build()?;
+    let wayland = winit::platform::wayland::EventLoopExtWayland::is_wayland(&el);
+    eprintln!("window: {}", if wayland { "Wayland" } else { "X11" });
     let in_status = Arc::new(input::Status::default());
     let (found, denied) = input::start(el.create_proxy(), in_status.clone());
     midi::start(el.create_proxy());
@@ -3389,6 +3469,8 @@ fn main() -> anyhow::Result<()> {
     let mut app = App {
         window: None,
         surface: None,
+        ui_scale: 1,
+        frame: (0, 0, Vec::new()),
         tx,
         trash: trash_rx,
         shared,
@@ -3432,7 +3514,9 @@ fn main() -> anyhow::Result<()> {
         in_status: in_status.clone(),
         lay: layout(1280, 800),
         fonts: text::Fonts::load(),
-        desk: desk::Desk::new(),
+        desk: desk::Desk::new(!wayland),
+        ignored_buttons: Vec::new(),
+        wayland,
         focused: true,
         direct: None,
         direct_prev: (0.0, 0.0),

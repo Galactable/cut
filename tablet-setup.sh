@@ -5,6 +5,13 @@
 # Settings last until the tablet is unplugged or you log out; just run it again.
 set -euo pipefail
 
+if [[ "${XDG_SESSION_TYPE:-}" == "wayland" ]]; then
+    echo "This script is for X11 desktops; on Wayland, xsetwacom can't change the tablet." >&2
+    echo "In CUT, open the Devices menu (X) and give the ExpressKeys their jobs there; CUT" >&2
+    echo "takes the tablet's touch surface and keys from the desktop while its window is focused." >&2
+    exit 1
+fi
+
 dev() { xsetwacom --list devices | grep -i "$1" | sed -E 's/[[:space:]]+id:.*//' | head -1; }
 PEN=$(dev "stylus")
 TOUCH=$(dev "touch")

@@ -1,14 +1,14 @@
 [package]
 name = "cut-deck"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 license = "CC0-1.0"
 
 [dependencies]
 anyhow = "1"
 cpal = { version = "0.15", features = ["jack"] }
-winit = { version = "0.30", default-features = false, features = ["x11", "rwh_06"] }
-softbuffer = { version = "0.4", default-features = false, features = ["x11", "x11-dlopen"] }
+winit = { version = "0.30", default-features = false, features = ["x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita", "rwh_06"] }
+softbuffer = { version = "0.4", default-features = false, features = ["x11", "x11-dlopen", "wayland", "wayland-dlopen"] }
 symphonia = { version = "0.5", features = ["all"] }
 hound = "3.5"
 rtrb = "0.3"

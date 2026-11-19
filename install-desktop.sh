@@ -26,9 +26,17 @@ refresh() {
     command -v update-desktop-database >/dev/null && update-desktop-database -q "$APPS" || true
 }
 
-if [[ "${1:-}" == "--remove" ]]; then
+# Before 0.8.0 the entry and icon were called "cut"; they're now "cut-deck", matching
+# the window's name, which Wayland desktops use to find the entry and its icon.
+remove_old() {
     rm -f "$APPS/cut.desktop"
     for s in $SIZES; do rm -f "$ICONS/${s}x${s}/apps/cut.png"; done
+}
+
+if [[ "${1:-}" == "--remove" ]]; then
+    remove_old
+    rm -f "$APPS/cut-deck.desktop"
+    for s in $SIZES; do rm -f "$ICONS/${s}x${s}/apps/cut-deck.png"; done
     if [[ $PACKAGED == 1 ]]; then rm -f "$LOCAL_BIN"; fi
     refresh
     echo "removed CUT from the launcher"
@@ -43,8 +51,9 @@ elif [[ ! -x "$BIN" ]]; then
     (cd "$HERE" && cargo $TC build --release)
 fi
 
+remove_old
 for s in $SIZES; do
-    "$BIN" --write-icon "$ICONS/${s}x${s}/apps/cut.png" "$s"
+    "$BIN" --write-icon "$ICONS/${s}x${s}/apps/cut-deck.png" "$s"
 done
 
 TYPES="audio/wav audio/x-wav audio/mpeg audio/flac audio/ogg"
@@ -56,7 +65,7 @@ if command -v xdg-mime >/dev/null; then
 fi
 
 mkdir -p "$APPS"
-cat > "$APPS/cut.desktop" <<EOF
+cat > "$APPS/cut-deck.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=CUT
@@ -64,7 +73,7 @@ GenericName=Vinyl scratch deck
 Comment=Dig a sample, scratch it with your fingers, record takes for your DAW
 Keywords=scratch;vinyl;turntable;dj;sample;turntablism;fl studio;
 Exec=$BIN %f
-Icon=cut
+Icon=cut-deck
 Terminal=false
 Categories=AudioVideo;Audio;Music;
 MimeType=audio/wav;audio/x-wav;audio/mpeg;audio/flac;audio/ogg;
@@ -77,12 +86,12 @@ if command -v xdg-mime >/dev/null; then
     mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}"
     for t in $TYPES; do
         prev=${BEFORE[$t]:-}
-        if [[ -n "$prev" && "$prev" != "cut.desktop" ]]; then
+        if [[ -n "$prev" && "$prev" != "cut.desktop" && "$prev" != "cut-deck.desktop" ]]; then
             xdg-mime default "$prev" "$t" || true
         fi
     done
 fi
-echo "CUT is in the launcher: $APPS/cut.desktop"
+echo "CUT is in the launcher: $APPS/cut-deck.desktop"
 if [[ $PACKAGED == 1 ]]; then
     echo "CUT is installed at $LOCAL_BIN"
     case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "(~/.local/bin isn't on your PATH: start CUT from the launcher, or add it to run cut-deck in a terminal)";; esac

@@ -10,7 +10,7 @@ It's modelled on a real turntable: your hand controls the record's position, the
 
 ## Install
 
-CUT runs on Linux with an X11 desktop (see [Running on other Linux systems](#running-on-other-linux-systems)). Pick one of three ways:
+CUT runs on Linux, on Wayland and X11 desktops (see [Running on other Linux systems](#running-on-other-linux-systems)). Pick one of three ways:
 
 ### Option 1: ready-made download (easiest)
 
@@ -24,7 +24,7 @@ cd cut-*-linux-x86_64
 ./input-access.sh      # lets CUT read touchpads, tablets and gamepads directly (asks for your password)
 ```
 
-You can delete the download folder afterwards. It runs on current Ubuntu, Debian, Fedora, Arch and their relatives on x86_64. The dialogs need `zenity`, the touchpad features need `xinput` and recording what's playing needs `parec`; most desktops have all three, and otherwise they're one package-manager command away.
+You can delete the download folder afterwards. It runs on current Ubuntu, Debian, Fedora, Arch and their relatives on x86_64. The dialogs need `zenity`, the touchpad features on X11 need `xinput` and recording what's playing needs `parec`; most desktops have all three, and otherwise they're one package-manager command away.
 
 To update, download the new release and run `./install-desktop.sh` again. `./install-desktop.sh --remove` uninstalls it.
 
@@ -95,7 +95,7 @@ cut-deck "path/to/sample.wav"                   # installed (download or AUR)
 ./target/release/cut-deck "path/to/sample.wav"  # built from source, in the cut folder
 ```
 
-You can also start it with no file and drop a file onto the window, or press **O**.
+You can also start it with no file and drop a file onto the window (X11 only for now), or press **O**.
 
 ## Quick start: scratch a sample over a beat
 
@@ -150,7 +150,7 @@ Press **X** (or Devices in the menu bar) to see every input device CUT can use, 
 
 ## Wacom Intuos Pro
 
-The ExpressKeys and touch ring work as soon as the tablet is plugged in, once CUT can read the tablet (run `./input-access.sh` once, or unlock the pad from **X**). The pad comes set up with the layout below, and you can change it under **X**. `tablet-setup.sh` still works if you prefer the desktop to handle the keys:
+The ExpressKeys and touch ring work as soon as the tablet is plugged in, once CUT can read the tablet (run `./input-access.sh` once, or unlock the pad from **X**). The pad comes set up with the layout below, and you can change it under **X**. On X11, `tablet-setup.sh` still works if you prefer the desktop to handle the keys (on Wayland the desktop's own tablet settings do that):
 
 ```bash
 ./tablet-setup.sh
@@ -268,10 +268,13 @@ The status bar shows the version in its bottom right corner. After an update it 
 
 ## Running on other Linux systems
 
-CUT runs on any Linux desktop with X11. On Wayland it runs through XWayland (most Wayland desktops include it), but the touchpad and touch features that use `xinput` don't work there.
+CUT runs on Wayland and X11 desktops, and picks Wayland when you're in a Wayland session.
+
+- **Wayland:** everything works, with two differences. On a touchpad, X11 lets CUT stop the desktop acting on your fingers; Wayland doesn't, so CUT ignores the scrolls and clicks the desktop makes from them instead. That covers the CUT window, but if you scratch with the pointer resting over another window, that window may scroll. And files can't be dropped onto the window yet: press **O**. To run CUT through XWayland instead, start it with `WAYLAND_DISPLAY= cut-deck`.
+- **Screen scaling:** at 150% or more CUT draws everything twice as large (three times from 250%), in whole steps so text stays sharp. To choose yourself, start it with `CUT_SCALE=1` (or 2, 3).
 
 - **Sound:** CUT uses PipeWire's JACK support, or a JACK server, when one is running. Otherwise it plays through ALSA, which also covers PulseAudio systems through ALSA's pulse plugin. The only library it needs is `libasound` (alsa-lib), which every desktop distro installs. JACK is loaded only if it's there.
-- **Needed for parts of the app:** `zenity` (open and save dialogs), `xinput` (touchpad handling), `parec` (recording what's playing with **W**; from `pulseaudio-utils`, or `libpulse` on Arch, and it works on PipeWire and PulseAudio), `pkexec` with a polkit agent (giving access from the Devices menu; otherwise it prints the `sudo` command to run), and `xsetwacom` (only for `tablet-setup.sh`).
+- **Needed for parts of the app:** `zenity` (open and save dialogs), `xinput` (touchpad handling on X11), `parec` (recording what's playing with **W**; from `pulseaudio-utils`, or `libpulse` on Arch, and it works on PipeWire and PulseAudio), `pkexec` with a polkit agent (giving access from the Devices menu; otherwise it prints the `sudo` command to run), and `xsetwacom` (only for `tablet-setup.sh`, X11 only).
 - **Building:** Rust (rustup), a C compiler, and the ALSA and JACK development files: `alsa-lib` and `jack` (e.g. `pipewire-jack`) on Arch/CachyOS, `libasound2-dev` and `libjack-jackd2-dev` on Debian/Ubuntu, `alsa-lib-devel` and `pipewire-jack-audio-connection-kit-devel` on Fedora. JACK is only needed to build; at run time CUT uses it if it's there.
 
 ## Latency

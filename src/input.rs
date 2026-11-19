@@ -14,7 +14,7 @@ use std::{
     os::fd::AsRawFd,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering::Relaxed},
+        atomic::{AtomicBool, AtomicU64, Ordering::Relaxed},
         Arc, Mutex,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -53,6 +53,21 @@ pub enum InEvent {
     /// A device was unplugged.
     Gone(Arc<str>),
 }
+
+/// What the touchpad is doing, written by its reader the moment events arrive. On Wayland
+/// CUT can't switch the desktop's tap-to-click off, so the window uses this to recognise a
+/// click the desktop made from a tap (see `desk::Desk::ignore_press`).
+pub struct Pad {
+    /// The touchpad's own button is pressed (a real click, not a tap).
+    pub click: AtomicBool,
+    /// When the last short touch (a tap) ended, in micros like `t`.
+    pub tap_end: AtomicU64,
+}
+
+pub static PAD: Pad = Pad { click: AtomicBool::new(false), tap_end: AtomicU64::new(0) };
+
+/// A touch shorter than this may be a tap (libinput's own limit is 180 ms).
+const TAP_US: u64 = 250_000;
 
 #[derive(Default)]
 pub struct Status {
@@ -335,6 +350,7 @@ fn touch_loop(mut dev: RawDevice, proxy: &EventLoopProxy<InEvent>, info: &DevInf
     let mut held_ids = Vec::new();
     let mut cur = 0usize;
     let mut holding = false;
+    let mut held_since = 0u64;
     let mut held_mask = 0u32;
     let mut grabbed = false;
     loop {
@@ -346,6 +362,7 @@ fn touch_loop(mut dev: RawDevice, proxy: &EventLoopProxy<InEvent>, info: &DevInf
         let Ok(events) = dev.fetch_events() else { return };
         for ev in events {
             match ev.kind() {
+                InputEventKind::Key(Key::BTN_LEFT) if kind == Kind::Touchpad => PAD.click.store(ev.value() != 0, Relaxed),
                 InputEventKind::AbsAxis(Abs::ABS_MT_SLOT) => cur = (ev.value().max(0) as usize).min(nslots - 1),
                 InputEventKind::AbsAxis(Abs::ABS_MT_TRACKING_ID) => {
                     ids[cur] = ev.value();
@@ -384,6 +401,7 @@ fn touch_loop(mut dev: RawDevice, proxy: &EventLoopProxy<InEvent>, info: &DevInf
                         let (x, y) = (sx / n, sy / n);
                         if !holding {
                             holding = true;
+                            held_since = t;
                             held_mask = mask;
                             held_ids = ids.clone();
                             Some(InEvent::Down { dev, kind, t, x, y, fingers })
@@ -396,6 +414,9 @@ fn touch_loop(mut dev: RawDevice, proxy: &EventLoopProxy<InEvent>, info: &DevInf
                         }
                     } else if holding {
                         holding = false;
+                        if kind == Kind::Touchpad && t.saturating_sub(held_since) < TAP_US {
+                            PAD.tap_end.store(t, Relaxed);
+                        }
                         Some(InEvent::Up { dev, kind })
                     } else {
                         None
