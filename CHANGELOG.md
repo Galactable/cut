@@ -1,5 +1,8 @@
 # What's new in CUT
 
+## 0.9.6
+- The font is now built into CUT. Before, CUT only used it if FantasqueSansM Nerd Font was installed; without it, text fell back to a blocky pixel font and the icons in the menus and status bar were missing. Now it looks the same on every system.
+
 ## 0.9.5
 - A new icon: the record is now a crescent moon, green and purple with a white outline. Run `./install-desktop.sh` again (or update the package) to see it in your launcher.
 

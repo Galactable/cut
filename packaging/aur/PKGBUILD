@@ -1,12 +1,12 @@
 # Maintainer: Galactable
 # Kept in github.com/Galactable/cut under packaging/aur; packaging/aur/update.sh bumps it per release.
 pkgname=cut-deck
-pkgver=0.9.5
+pkgver=0.9.6
 pkgrel=1
 pkgdesc="Vinyl scratch deck: scratch samples over a backing track with a touchpad, tablet or MIDI DJ controller, and record takes"
 arch=('x86_64')
 url="https://github.com/Galactable/cut"
-license=('CC0-1.0')
+license=('CC0-1.0' 'OFL-1.1')
 depends=('alsa-lib' 'gcc-libs' 'glibc' 'hicolor-icon-theme' 'libpulse' 'zenity')
 # jack: only to build (the audio library checks for it); at run time it's optional.
 makedepends=('cargo' 'jack')
@@ -18,7 +18,7 @@ install=cut-deck.install
 # The bundled LAME (MP3) is C; with makepkg's LTO its objects can't be linked by Rust.
 options=('!lto')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/v$pkgver.tar.gz")
-sha256sums=('30a73a8f31a158ef0b2fa7636635bf102ed034c63078ea84cdaee13a07daf200')
+sha256sums=('edc1197b2bcbbee4b9f3b2b8c514a447a0b36621bcd04c6d1579a7d275da8a5c')
 
 prepare() {
   cd "cut-$pkgver"
@@ -74,4 +74,5 @@ EOF
   install -Dm755 tablet-setup.sh "$pkgdir/usr/share/cut-deck/tablet-setup.sh"
   install -Dm644 README.md CHANGELOG.md -t "$pkgdir/usr/share/doc/cut-deck/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/cut-deck/LICENSE"
+  install -Dm644 assets/fonts/OFL.txt "$pkgdir/usr/share/licenses/cut-deck/FONT-OFL.txt"
 }

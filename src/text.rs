@@ -1,5 +1,10 @@
-//! TrueType text (FantasqueSansM Nerd Font Mono) with a glyph cache; falls back to the
-//! built-in 8x8 font if the font can't be found.
+//! TrueType text (FantasqueSansM Nerd Font Mono, built in) with a glyph cache; falls back
+//! to the built-in 8x8 font if the font can't be read.
+//!
+//! The font is a cut-down copy: Latin, Greek, Cyrillic, punctuation, arrows and the icons
+//! CUT draws, about 60 KB a weight. Its licence is `assets/fonts/OFL.txt`. To add an icon,
+//! make the files again with fontTools' `pyftsubset` from the full Nerd Font, adding the
+//! icon's code point to the list (see `assets/fonts/README.md`).
 
 use std::collections::HashMap;
 
@@ -7,7 +12,8 @@ use fontdue::{Font, FontSettings, Metrics};
 
 use crate::ui::Canvas;
 
-const FAMILY: &str = "FantasqueSansM Nerd Font Mono";
+const REGULAR: &[u8] = include_bytes!("../assets/fonts/FantasqueSansMNerdFontMono-Regular.ttf");
+const BOLD: &[u8] = include_bytes!("../assets/fonts/FantasqueSansMNerdFontMono-Bold.ttf");
 
 struct Face {
     font: Font,
@@ -20,30 +26,12 @@ pub struct Fonts {
     faces: [Option<Face>; 2],
 }
 
-fn find(style: &str, fallback: &str) -> Option<Vec<u8>> {
-    let path = std::process::Command::new("fc-match")
-        .args(["-f", "%{file}", &format!("{FAMILY}:{style}")])
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|p| p.contains("Fantasque"))
-        .unwrap_or_else(|| fallback.to_string());
-    std::fs::read(path).ok()
-}
-
 impl Fonts {
     pub fn load() -> Self {
-        let face = |style, fallback| {
-            find(style, fallback)
-                .and_then(|b| Font::from_bytes(b, FontSettings { scale: 32.0, ..Default::default() }).ok())
-                .map(|font| Face { font, cache: HashMap::new() })
+        let face = |bytes: &[u8]| {
+            Font::from_bytes(bytes, FontSettings { scale: 32.0, ..Default::default() }).ok().map(|font| Face { font, cache: HashMap::new() })
         };
-        Fonts {
-            faces: [
-                face("style=Regular", "/usr/share/fonts/TTF/FantasqueSansMNerdFontMono-Regular.ttf"),
-                face("style=Bold", "/usr/share/fonts/TTF/FantasqueSansMNerdFontMono-Bold.ttf"),
-            ],
-        }
+        Fonts { faces: [face(REGULAR), face(BOLD)] }
     }
 
     fn face(&mut self, bold: bool) -> Option<&mut Face> {
@@ -105,5 +93,38 @@ impl Fonts {
             return s.chars().count() as i32 * 8 * scale;
         }
         self.render(x as f32, top as f32, s, px, bold, |gx, gy, a| c.blend(gx, gy, color, a))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Both weights load, and every icon CUT draws is in the cut-down font (an icon
+    /// missing from it would draw as nothing).
+    #[test]
+    fn built_in_font_has_the_icons() {
+        let fonts = Fonts::load();
+        let icons: Vec<char> = ["src/main.rs", "src/devmenu.rs"]
+            .iter()
+            .flat_map(|f| {
+                let s = std::fs::read_to_string(f).unwrap();
+                s.match_indices("\\u{").filter_map(|(i, _)| {
+                    let hex = &s[i + 3..i + 3 + s[i + 3..].find('}')?];
+                    char::from_u32(u32::from_str_radix(hex, 16).ok()?)
+                })
+                // Control characters (the save form's field separator) aren't drawn.
+                .filter(|c| !c.is_control())
+                .collect::<Vec<_>>()
+            })
+            .chain(['•', '←', '→', '↑', '↓', 'é', 'ß', 'Ж'])
+            .collect();
+        assert!(!icons.is_empty());
+        for (i, face) in fonts.faces.iter().enumerate() {
+            let face = face.as_ref().expect("font loads");
+            for &c in &icons {
+                assert!(face.font.lookup_glyph_index(c) != 0, "U+{:04X} missing from face {i}", c as u32);
+            }
+        }
     }
 }
