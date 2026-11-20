@@ -314,4 +314,4 @@ Use wired headphones or the laptop speakers. Bluetooth headphones add 150 ms or 
 
 CUT is released into the public domain under [CC0 1.0](LICENSE). Copy it, change it and pass it on: no permission or credit needed.
 
-The libraries CUT is built with keep their own licenses.
+The libraries CUT is built with keep their own licenses. The built-in font, FantasqueSansM Nerd Font Mono, is under the SIL Open Font License (`assets/fonts/OFL.txt`).

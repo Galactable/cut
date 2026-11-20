@@ -6,7 +6,7 @@ pkgrel=1
 pkgdesc="Vinyl scratch deck: scratch samples over a backing track with a touchpad, tablet or MIDI DJ controller, and record takes"
 arch=('x86_64')
 url="https://github.com/Galactable/cut"
-license=('CC0-1.0')
+license=('CC0-1.0' 'OFL-1.1')
 depends=('alsa-lib' 'gcc-libs' 'glibc' 'hicolor-icon-theme' 'libpulse' 'zenity')
 # jack: only to build (the audio library checks for it); at run time it's optional.
 makedepends=('cargo' 'jack')
@@ -74,4 +74,5 @@ EOF
   install -Dm755 tablet-setup.sh "$pkgdir/usr/share/cut-deck/tablet-setup.sh"
   install -Dm644 README.md CHANGELOG.md -t "$pkgdir/usr/share/doc/cut-deck/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/cut-deck/LICENSE"
+  install -Dm644 assets/fonts/OFL.txt "$pkgdir/usr/share/licenses/cut-deck/FONT-OFL.txt"
 }

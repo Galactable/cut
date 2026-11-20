@@ -44,6 +44,7 @@ jobs:
           cp target/release/cut-deck "$NAME/"
           strip "$NAME/cut-deck"
           cp install-desktop.sh input-access.sh tablet-setup.sh README.md CHANGELOG.md LICENSE "$NAME/"
+          cp assets/fonts/OFL.txt "$NAME/FONT-LICENSE.txt"
           tar czf "$NAME.tar.gz" "$NAME"
           sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
           echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
