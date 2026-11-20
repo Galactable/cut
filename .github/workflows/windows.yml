@@ -26,6 +26,7 @@ jobs:
           NAME="cut-windows-${GITHUB_SHA::7}"
           mkdir "$NAME"
           cp target/release/cut-deck.exe README.md CHANGELOG.md LICENSE "$NAME/"
+          cp assets/fonts/OFL.txt "$NAME/FONT-LICENSE.txt"
           echo "NAME=$NAME" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
