@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod beat;
 mod capture;
 mod cmd;
@@ -434,6 +436,8 @@ struct App {
     cursor: (f64, f64),
     last_angle: f64,
     mouse_scratch: bool,
+    /// Timing of the current mouse scratch, reported when it ends (see MouseStats).
+    mouse_stats: MouseStats,
     shift: bool,
     ctrl: bool,
     scroll_last: Option<Instant>,
@@ -1827,6 +1831,7 @@ impl App {
                         return;
                     }
                     self.mouse_scratch = true;
+                    self.mouse_stats = MouseStats::default();
                     self.sens_kind = Kind::Mouse;
                 } else if let Some(a0) = self.region_drag.take() {
                     let (a, b) = (a0.round() as usize, self.overview_x_to_sample(self.cursor.0));
@@ -1838,6 +1843,9 @@ impl App {
                     }
                     return;
                 } else {
+                    if self.mouse_scratch {
+                        self.mouse_stats.report(self.ui_scale);
+                    }
                     self.mouse_scratch = false;
                 }
                 self.update_hand();
@@ -2971,12 +2979,21 @@ impl ApplicationHandler<InEvent> for App {
         }
         match event {
             WindowEvent::CloseRequested => el.exit(),
-            WindowEvent::RedrawRequested => self.draw(),
+            WindowEvent::RedrawRequested => {
+                let t0 = Instant::now();
+                self.draw();
+                if self.mouse_scratch {
+                    self.mouse_stats.draws.push(t0.elapsed().as_secs_f32() * 1e3);
+                }
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 // Opening under the pointer may not send CursorEntered; moving counts too.
                 if !self.pointer_inside {
                     self.pointer_inside = true;
                     self.desk.set_taps_off(self.focused);
+                }
+                if self.mouse_scratch {
+                    self.mouse_stats.moved(position.x, position.y);
                 }
                 let k = self.ui_scale as f64;
                 self.cursor_moved(position.x / k, position.y / k);
@@ -3218,6 +3235,73 @@ impl ApplicationHandler<InEvent> for App {
         }
         let wait = if changed { 4 } else { 25 };
         el.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(wait)));
+    }
+}
+
+/// Windows: CUT has no console window, so everything it would print goes to cut.log in
+/// its settings folder instead (the last run's log is kept as cut.old.log).
+#[cfg(windows)]
+fn log_to_file() {
+    use std::os::windows::io::IntoRawHandle;
+    extern "system" {
+        fn SetStdHandle(which: u32, handle: *mut std::ffi::c_void) -> i32;
+    }
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+    let dir = library::config_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("cut.log");
+    let _ = std::fs::rename(&path, dir.join("cut.old.log"));
+    let Ok(f) = std::fs::File::create(&path) else { return };
+    let Ok(f2) = f.try_clone() else { return };
+    // The handles stay open for as long as CUT runs.
+    unsafe {
+        SetStdHandle(STD_OUTPUT_HANDLE, f.into_raw_handle());
+        SetStdHandle(STD_ERROR_HANDLE, f2.into_raw_handle());
+    }
+}
+
+/// How the pointer reached CUT during one mouse scratch: how often it moved, the gaps
+/// between moves, whether positions come in whole pixels, and how long drawing took.
+/// Printed to the log when the button is let go, to compare systems.
+#[derive(Default)]
+struct MouseStats {
+    last: Option<Instant>,
+    gaps: Vec<f32>,
+    whole: u32,
+    draws: Vec<f32>,
+}
+
+impl MouseStats {
+    fn moved(&mut self, x: f64, y: f64) {
+        let now = Instant::now();
+        if let Some(l) = self.last {
+            self.gaps.push((now - l).as_secs_f32() * 1e3);
+        }
+        self.last = Some(now);
+        if x.fract() == 0.0 && y.fract() == 0.0 {
+            self.whole += 1;
+        }
+    }
+
+    fn report(&mut self, scale: u32) {
+        let n = self.gaps.len();
+        if n < 20 {
+            return;
+        }
+        let pct = |v: &mut Vec<f32>, q: f32| {
+            v.sort_by(f32::total_cmp);
+            v.get(((v.len() - 1) as f32 * q) as usize).copied().unwrap_or(0.0)
+        };
+        let secs: f32 = self.gaps.iter().sum::<f32>() / 1e3;
+        let (g50, g90, gmax) = (pct(&mut self.gaps, 0.5), pct(&mut self.gaps, 0.9), pct(&mut self.gaps, 1.0));
+        let (d50, dmax) = (pct(&mut self.draws, 0.5), pct(&mut self.draws, 1.0));
+        eprintln!(
+            "mouse scratch: {:.0} moves/s, gaps {g50:.1}/{g90:.1}/{gmax:.1} ms (median/90%/max), {}% whole pixels, ui scale {scale}, drawing {d50:.1}/{dmax:.1} ms (median/max) over {} frames",
+            n as f32 / secs.max(1e-3),
+            self.whole * 100 / (n as u32 + 1),
+            self.draws.len()
+        );
     }
 }
 
@@ -3478,6 +3562,8 @@ fn main() -> anyhow::Result<()> {
         println!("CUT {VERSION}");
         return Ok(());
     }
+    #[cfg(windows)]
+    log_to_file();
     if args.first().map(String::as_str) == Some("--render-test") {
         let out = args.get(1).map(String::as_str).unwrap_or("render-test.wav");
         return engine::render_test(args.get(2).map(String::as_str), out);
@@ -3557,6 +3643,7 @@ fn main() -> anyhow::Result<()> {
         cursor: (0.0, 0.0),
         last_angle: 0.0,
         mouse_scratch: false,
+        mouse_stats: MouseStats::default(),
         shift: false,
         ctrl: false,
         scroll_last: None,
