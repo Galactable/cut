@@ -10,6 +10,7 @@ mod dsp;
 mod engine;
 mod input;
 mod library;
+#[cfg(target_os = "linux")]
 mod midi;
 mod pics;
 mod recorder;
@@ -2977,7 +2978,9 @@ impl ApplicationHandler<InEvent> for App {
             .with_window_icon(window_icon());
         // WM_CLASS on X11, app_id on Wayland: what launchers and window rules match, and
         // on Wayland how the desktop finds cut-deck.desktop and its icon.
+        #[cfg(target_os = "linux")]
         let attrs = winit::platform::x11::WindowAttributesExtX11::with_name(attrs, "cut-deck", "CUT");
+        #[cfg(target_os = "linux")]
         let attrs = winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, "cut-deck", "CUT");
         let win = Rc::new(el.create_window(attrs).expect("create window"));
         let ctx = softbuffer::Context::new(win.clone()).expect("softbuffer context");
@@ -3272,10 +3275,18 @@ struct Audio {
     out_rate: u32,
 }
 
-/// JACK (PipeWire's) first: it honours small buffers cleanly. Plain ALSA as a fallback.
+/// The sound systems to try, in order. Linux: JACK (PipeWire's) first, as it honours
+/// small buffers cleanly, then plain ALSA. Elsewhere: the system's own (WASAPI on Windows).
+fn audio_hosts() -> Vec<cpal::HostId> {
+    #[cfg(target_os = "linux")]
+    return vec![cpal::HostId::Jack, cpal::HostId::Alsa];
+    #[cfg(not(target_os = "linux"))]
+    return vec![cpal::default_host().id()];
+}
+
 fn open_audio(rec: Arc<Record>) -> anyhow::Result<Audio> {
     let mut last_err = anyhow::anyhow!("no audio host available");
-    for id in [cpal::HostId::Jack, cpal::HostId::Alsa] {
+    for id in audio_hosts() {
         let attempt = || -> anyhow::Result<Audio> {
             let host = cpal::host_from_id(id)?;
             let device = host.default_output_device().context("no output device")?;
@@ -3516,10 +3527,17 @@ fn main() -> anyhow::Result<()> {
     recorder::spawn(shared.clone(), take_rx, out_rate, take_status.clone(), takes_dir.clone(), save_mp3.clone());
 
     let el = EventLoop::<InEvent>::with_user_event().build()?;
-    let wayland = winit::platform::wayland::EventLoopExtWayland::is_wayland(&el);
-    eprintln!("window: {}", if wayland { "Wayland" } else { "X11" });
+    #[cfg(target_os = "linux")]
+    let (wayland, x11) = {
+        let wayland = winit::platform::wayland::EventLoopExtWayland::is_wayland(&el);
+        eprintln!("window: {}", if wayland { "Wayland" } else { "X11" });
+        (wayland, !wayland)
+    };
+    #[cfg(not(target_os = "linux"))]
+    let (wayland, x11) = (false, false);
     let in_status = Arc::new(input::Status::default());
     let (found, denied) = input::start(el.create_proxy(), in_status.clone());
+    #[cfg(target_os = "linux")]
     midi::start(el.create_proxy());
 
     let src_len = src.len();
@@ -3572,10 +3590,10 @@ fn main() -> anyhow::Result<()> {
         in_status: in_status.clone(),
         lay: layout(1280, 800),
         fonts: text::Fonts::load(),
-        desk: desk::Desk::new(!wayland),
+        desk: desk::Desk::new(x11),
         ignored_buttons: Vec::new(),
         wayland,
-        x11_scale: (!wayland).then(x11_scale),
+        x11_scale: x11.then(x11_scale),
         focused: true,
         fixing_beat: false,
         direct: None,

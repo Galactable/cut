@@ -34,6 +34,7 @@ pub fn unique(dir: &Path, name: &str, ext: &str) -> PathBuf {
 
 /// 320 kbps stereo MP3: about a fifth the size of a 24-bit WAV, and plenty for scratch
 /// samples. (MP3 adds a few ms of silence at the start; use WAV where alignment is critical.)
+#[cfg(target_os = "linux")]
 pub fn save_mp3(path: &Path, l: &[f32], r: &[f32], rate: u32) -> anyhow::Result<()> {
     use mp3lame_encoder::{Bitrate, Builder, DualPcm, FlushNoGap, Quality};
     if let Some(dir) = path.parent() {
@@ -58,6 +59,12 @@ pub fn save_mp3(path: &Path, l: &[f32], r: &[f32], rate: u32) -> anyhow::Result<
     enc.flush_to_vec::<FlushNoGap>(&mut out).map_err(|x| e(&x))?;
     std::fs::write(path, out)?;
     Ok(())
+}
+
+/// The MP3 encoder (LAME) only builds on Linux so far.
+#[cfg(not(target_os = "linux"))]
+pub fn save_mp3(_path: &Path, _l: &[f32], _r: &[f32], _rate: u32) -> anyhow::Result<()> {
+    anyhow::bail!("MP3 saving isn't available on this system yet: choose WAV in File > Save format")
 }
 
 /// Converts a finished WAV take to MP3 next to it and removes the WAV.
@@ -198,7 +205,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod mp3_tests {
     use super::*;
 

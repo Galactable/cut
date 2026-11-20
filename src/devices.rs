@@ -75,11 +75,21 @@ impl Ctl {
 
     /// A name for people: the kernel's name for evdev codes, MIDI terms otherwise.
     pub fn label(&self) -> String {
+        #[cfg(target_os = "linux")]
         let tidy = |s: String| s.trim_start_matches("BTN_").trim_start_matches("KEY_").trim_start_matches("ABS_").trim_start_matches("REL_").to_string();
         match *self {
+            #[cfg(target_os = "linux")]
             Ctl::Key(c) => format!("button {}", tidy(format!("{:?}", evdev::Key::new(c)))),
+            #[cfg(target_os = "linux")]
             Ctl::Abs(c) => format!("axis {}", tidy(format!("{:?}", evdev::AbsoluteAxisType(c)))),
+            #[cfg(target_os = "linux")]
             Ctl::Rel(c) => format!("wheel {}", tidy(format!("{:?}", evdev::RelativeAxisType(c)))),
+            #[cfg(not(target_os = "linux"))]
+            Ctl::Key(c) => format!("button {c}"),
+            #[cfg(not(target_os = "linux"))]
+            Ctl::Abs(c) => format!("axis {c}"),
+            #[cfg(not(target_os = "linux"))]
+            Ctl::Rel(c) => format!("wheel {c}"),
             Ctl::Note(ch, n) => format!("note {n} ch{}", ch + 1),
             Ctl::Cc(ch, n) => format!("CC {n} ch{}", ch + 1),
             Ctl::Bend(ch) => format!("pitch bend ch{}", ch + 1),
@@ -416,6 +426,8 @@ pub fn builtin(id: &str, name: &str) -> Option<DevProfile> {
 
 /// What kind of thing a device is, as far as CUT cares.
 #[derive(Clone, Copy, Debug, PartialEq)]
+// Only Linux reads devices directly so far; elsewhere most kinds aren't made yet.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub enum Class {
     /// A multi-touch surface, read by the touch path.
     Touch(Kind),
