@@ -1,5 +1,8 @@
 # What's new in CUT
 
+## 0.9.5
+- A new icon: the record is now a crescent moon, green and purple with a white outline. Run `./install-desktop.sh` again (or update the package) to see it in your launcher.
+
 ## 0.9.4
 - The Backing menu is shorter: the beat fixes (tap, half and double tempo, earlier and later, detect again) only show while **Backing > Fix the beat** is on. Turning it on keeps the menu open, so you see them appear with their keys.
 - **Takes > BPM down / up** no longer show **9** and **0** beside them, since those keys only work while fixing the beat.

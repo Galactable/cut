@@ -307,51 +307,79 @@ pub fn peaks_range(l: &[f32], r: &[f32], v0: f64, v1: f64, cols: usize) -> Vec<(
         .collect()
 }
 
-/// The app icon: a plain flat record with a bite taken out of its edge (upper right) and
-/// the spindle hole, split down the middle by a zig-zag: green left, purple right. Returns `size` x `size` pixels as 0xAARRGGBB,
-/// transparent outside the record.
+/// The app icon: a record cut to a crescent (opening to the upper right), split across
+/// its band by a zig-zag, green towards the upper left and purple towards the lower right,
+/// with a white outline. The outline stays visible at small sizes: about 1 px at 22,
+/// 2 px at 64 and 6 px at 220; the crescent shrinks inside it to keep the same overall
+/// size. Returns `size` x `size` pixels as 0xAARRGGBB, transparent outside.
 pub fn record_icon(size: usize) -> Vec<u32> {
-    let r = size as f64 * 0.47;
-    let c = size as f64 / 2.0;
-    // The bite: overlapping round tooth marks just past the rim, like a bitten cookie.
-    let bites: Vec<(f64, f64, f64)> = [(-1.13f64, 0.20f64), (-0.79, 0.25), (-0.45, 0.20)]
-        .iter()
-        .map(|&(a, rad)| (a.cos() * r * 0.98, a.sin() * r * 0.98, rad * r))
-        .collect();
-    // The zig-zag: a sharp triangle wave down the middle, four points tall.
+    // Worked out on a 100-unit square, centred on the record.
+    let unit = 100.0 / size as f64;
+    let outline = icon_outline_px(size as f64) * unit;
+    // The outline's outer edge sits at 49; the crescent is scaled by k inside it.
+    let k = (49.0 - outline) / 47.0;
+    let (cx, cy) = (15.0 * k, -13.0 * k);
+    let (disc, cut) = (47.0 * k, 41.0 * k);
+    // The zig-zag on the unscaled record: a triangle wave down the middle, four points
+    // tall, turned 45 degrees so it crosses the crescent's band.
     let zig = |y: f64| -> f64 {
-        let t = (y + r) / (2.0 * r / 4.0);
+        let t = (y + 47.0) / (2.0 * 47.0 / 4.0);
         let tri = 1.0 - 4.0 * (t.fract() - 0.5).abs();
-        tri * r * 0.11
+        tri * 47.0 * 0.11
     };
+    let s45 = std::f64::consts::FRAC_1_SQRT_2;
     let ss = 4;
     let mut out = vec![0u32; size * size];
     for py in 0..size {
         for px in 0..size {
-            let (mut cov, mut green) = (0u32, 0u32);
+            let (mut cov, mut rgb) = (0u32, [0u32; 3]);
             for sy in 0..ss {
                 for sx in 0..ss {
-                    let x = px as f64 + (sx as f64 + 0.5) / ss as f64 - c;
-                    let y = py as f64 + (sy as f64 + 0.5) / ss as f64 - c;
+                    let x = (px as f64 + (sx as f64 + 0.5) / ss as f64) * unit - 50.0;
+                    let y = (py as f64 + (sy as f64 + 0.5) / ss as f64) * unit - 50.0;
                     let d = x.hypot(y);
-                    let bitten = bites.iter().any(|&(bx, by, br)| (x - bx).hypot(y - by) < br);
-                    if d <= r && d >= r * 0.09 && !bitten {
-                        cov += 1;
-                        if x < zig(y) {
-                            green += 1;
-                        }
+                    let dc = (x - cx).hypot(y - cy);
+                    let col = if d <= disc && dc >= cut {
+                        // Back on the unscaled record, then turned back by 45 degrees.
+                        let (ux, uy) = (x / k, y / k);
+                        let (qx, qy) = (ux * s45 + uy * s45, -ux * s45 + uy * s45);
+                        if qx < zig(qy) { GREEN } else { PURPLE }
+                    } else if d <= 49.0 && dc >= cut - outline {
+                        0xffffff
+                    } else {
+                        continue;
+                    };
+                    cov += 1;
+                    for (i, c) in rgb.iter_mut().enumerate() {
+                        *c += (col >> (16 - 8 * i)) & 0xff;
                     }
                 }
             }
             if cov > 0 {
                 let a = cov * 255 / (ss * ss) as u32;
-                // Blend along the zig-zag so its edge is smooth at small sizes.
-                let mixc = |s: u32| (((GREEN >> s) & 0xff) * green + ((PURPLE >> s) & 0xff) * (cov - green)) / cov;
-                out[py * size + px] = (a << 24) | (mixc(16) << 16) | (mixc(8) << 8) | mixc(0);
+                let [r, g, b] = rgb.map(|c| c / cov);
+                out[py * size + px] = (a << 24) | (r << 16) | (g << 8) | b;
             }
         }
     }
     out
+}
+
+/// The icon's outline width in pixels at a given size: 1 at 22, 1.25 at 32, 2 at 64 and
+/// 6 at 220, in straight lines between, never under 1, and growing in step with the icon
+/// past 220.
+fn icon_outline_px(size: f64) -> f64 {
+    const AT: [(f64, f64); 4] = [(22.0, 1.0), (32.0, 1.25), (64.0, 2.0), (220.0, 6.0)];
+    if size <= AT[0].0 {
+        return 1.0;
+    }
+    for w in AT.windows(2) {
+        let ((s0, p0), (s1, p1)) = (w[0], w[1]);
+        if size <= s1 {
+            return p0 + (p1 - p0) * (size - s0) / (s1 - s0);
+        }
+    }
+    6.0 * size / 220.0
 }
 
 impl Canvas<'_> {
