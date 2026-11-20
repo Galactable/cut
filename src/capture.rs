@@ -1,14 +1,18 @@
 //! Records whatever the computer is playing (a video, a film, a browser tab) so it can go
 //! straight onto the record, without recording it elsewhere and importing the file.
 //!
-//! `parec` reads the monitor of the default output, which works the same on PipeWire and
-//! PulseAudio. The audio is kept in memory until the capture is stopped, then trimmed of
+//! On Linux `parec` reads the monitor of the default output, which works the same on
+//! PipeWire and PulseAudio. On Windows the default output is recorded through WASAPI's
+//! loopback. The audio is kept in memory until the capture is stopped, then trimmed of
 //! the silence around it and saved to the library.
 
+#[cfg(not(windows))]
 use std::{
     io::Read,
-    path::PathBuf,
     process::{Child, Command, Stdio},
+};
+use std::{
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed},
         mpsc, Arc,
@@ -23,7 +27,12 @@ pub const MAX_SECS: u64 = 600;
 const SILENT: f32 = 1e-4;
 
 pub struct Capture {
+    /// What's doing the recording: the `parec` process, or the loopback stream (taken
+    /// away to stop it).
+    #[cfg(not(windows))]
     child: Child,
+    #[cfg(windows)]
+    stream: Option<cpal::Stream>,
     pub rate: u32,
     /// Frames heard so far, and their recent peak, for the status bar.
     pub frames: Arc<AtomicU64>,
@@ -38,6 +47,7 @@ pub struct Capture {
 
 impl Capture {
     /// Starts recording the default output. `dir` is where the capture is saved.
+    #[cfg(not(windows))]
     pub fn start(rate: u32, dir: PathBuf, mp3: bool) -> Result<Capture, String> {
         let mut child = Command::new("parec")
             .args([
@@ -103,11 +113,90 @@ impl Capture {
         Ok(Capture { child, rate, frames, level, stopping: false, stop, done })
     }
 
+    /// Starts recording the default output through WASAPI loopback, at the output's own
+    /// rate. `dir` is where the capture is saved.
+    #[cfg(windows)]
+    pub fn start(_rate: u32, dir: PathBuf, mp3: bool) -> Result<Capture, String> {
+        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+        let fail = |e: &dyn std::fmt::Display| format!("couldn't record what's playing: {e}");
+        let device = cpal::default_host().default_output_device().ok_or("couldn't record what's playing: no output device")?;
+        let config = device.default_output_config().map_err(|e| fail(&e))?;
+        if config.sample_format() != cpal::SampleFormat::F32 {
+            return Err(format!("couldn't record what's playing: the output uses {:?} samples", config.sample_format()));
+        }
+        let rate = config.sample_rate().0;
+        let channels = config.channels() as usize;
+        let (chunks_tx, chunks) = mpsc::channel::<Vec<f32>>();
+        // Windows sends nothing while nothing plays: fill those gaps with silence, so a
+        // pause in the middle of a capture stays a pause.
+        let mut next: Option<cpal::StreamInstant> = None;
+        let stream = device
+            .build_input_stream(
+                &config.into(),
+                move |data: &[f32], info: &cpal::InputCallbackInfo| {
+                    let at = info.timestamp().capture;
+                    let mut out = Vec::with_capacity(data.len() / channels * 2 + 64);
+                    if let Some(gap) = next.and_then(|n| at.duration_since(&n)) {
+                        let missing = (gap.as_secs_f64() * rate as f64) as usize;
+                        if missing > rate as usize / 50 {
+                            out.resize(missing.min(MAX_SECS as usize * rate as usize) * 2, 0.0);
+                        }
+                    }
+                    for f in data.chunks_exact(channels) {
+                        out.push(f[0]);
+                        out.push(*f.get(1).unwrap_or(&f[0]));
+                    }
+                    let len = std::time::Duration::from_secs_f64((data.len() / channels) as f64 / rate as f64);
+                    next = at.add(len);
+                    let _ = chunks_tx.send(out);
+                },
+                |e| eprintln!("recording what's playing: {e}"),
+                None,
+            )
+            .map_err(|e| fail(&e))?;
+        stream.play().map_err(|e| fail(&e))?;
+        let frames = Arc::new(AtomicU64::new(0));
+        let level = Arc::new(AtomicU32::new(0));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (tx, done) = mpsc::channel();
+        let (frames2, level2, stop2) = (frames.clone(), level.clone(), stop.clone());
+        std::thread::spawn(move || {
+            let (mut l, mut r) = (Vec::new(), Vec::new());
+            let max = MAX_SECS as usize * rate as usize;
+            while l.len() < max && !stop2.load(Relaxed) {
+                let Ok(chunk) = chunks.recv_timeout(std::time::Duration::from_millis(50)) else { continue };
+                let mut peak = 0f32;
+                for f in chunk.chunks_exact(2) {
+                    peak = peak.max(f[0].abs()).max(f[1].abs());
+                    l.push(f[0]);
+                    r.push(f[1]);
+                }
+                frames2.store(l.len() as u64, Relaxed);
+                let old = f32::from_bits(level2.load(Relaxed));
+                level2.store(peak.max(old * 0.8).to_bits(), Relaxed);
+            }
+            // Whatever arrived before the stream stopped.
+            for chunk in chunks.try_iter() {
+                for f in chunk.chunks_exact(2) {
+                    l.push(f[0]);
+                    r.push(f[1]);
+                }
+            }
+            l.truncate(max);
+            r.truncate(max);
+            let _ = tx.send(finish(l, r, rate, dir, mp3));
+        });
+        Ok(Capture { stream: Some(stream), rate, frames, level, stopping: false, stop, done })
+    }
+
     /// Ends the capture; the result arrives on `done` once it's trimmed and saved.
     pub fn stop(&mut self) {
         self.stopping = true;
         self.stop.store(true, Relaxed);
+        #[cfg(not(windows))]
         let _ = self.child.kill();
+        #[cfg(windows)]
+        drop(self.stream.take());
     }
 
     pub fn secs(&self) -> u64 {
@@ -115,6 +204,7 @@ impl Capture {
     }
 }
 
+#[cfg(not(windows))]
 impl Drop for Capture {
     fn drop(&mut self) {
         let _ = self.child.kill();

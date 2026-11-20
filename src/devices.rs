@@ -363,8 +363,7 @@ impl DevProfile {
 }
 
 pub fn dir() -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| ".".into());
-    home.join(".config").join("cut").join("devices")
+    crate::library::config_dir().join("devices")
 }
 
 pub fn load_all() -> HashMap<String, DevProfile> {

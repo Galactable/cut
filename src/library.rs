@@ -1,13 +1,30 @@
-//! The sample library: <samples folder>/<Folder>/<name>.wav (default ~/Music/CUT)
+//! The sample library: <samples folder>/<Folder>/<name>.wav (default ~/Music/CUT), and
+//! where CUT keeps its own files.
 
 use std::path::{Path, PathBuf};
 
 pub const FOLDERS: &str = "Vocals|Cuts|Horns|Stabs|Drums|FX|Other";
 const AUDIO_EXT: [&str; 8] = ["wav", "mp3", "flac", "ogg", "aif", "aiff", "m4a", "opus"];
 
+/// The person's home folder (`HOME`; `USERPROFILE` on Windows).
+pub fn home() -> PathBuf {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(var).map(PathBuf::from).unwrap_or_else(|| ".".into())
+}
+
+/// Where CUT keeps its settings, device setups, profiles and beats: `~/.config/cut`, or
+/// `%APPDATA%\CUT` on Windows.
+pub fn config_dir() -> PathBuf {
+    #[cfg(windows)]
+    if let Some(app) = std::env::var_os("APPDATA") {
+        return PathBuf::from(app).join("CUT");
+    }
+    home().join(".config").join("cut")
+}
+
+/// The default samples folder: Music/CUT in the home folder.
 pub fn root() -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| ".".into());
-    home.join("Music").join("CUT")
+    home().join("Music").join("CUT")
 }
 
 /// Keeps names filesystem- and FL-friendly.
@@ -34,7 +51,6 @@ pub fn unique(dir: &Path, name: &str, ext: &str) -> PathBuf {
 
 /// 320 kbps stereo MP3: about a fifth the size of a 24-bit WAV, and plenty for scratch
 /// samples. (MP3 adds a few ms of silence at the start; use WAV where alignment is critical.)
-#[cfg(target_os = "linux")]
 pub fn save_mp3(path: &Path, l: &[f32], r: &[f32], rate: u32) -> anyhow::Result<()> {
     use mp3lame_encoder::{Bitrate, Builder, DualPcm, FlushNoGap, Quality};
     if let Some(dir) = path.parent() {
@@ -59,12 +75,6 @@ pub fn save_mp3(path: &Path, l: &[f32], r: &[f32], rate: u32) -> anyhow::Result<
     enc.flush_to_vec::<FlushNoGap>(&mut out).map_err(|x| e(&x))?;
     std::fs::write(path, out)?;
     Ok(())
-}
-
-/// The MP3 encoder (LAME) only builds on Linux so far.
-#[cfg(not(target_os = "linux"))]
-pub fn save_mp3(_path: &Path, _l: &[f32], _r: &[f32], _rate: u32) -> anyhow::Result<()> {
-    anyhow::bail!("MP3 saving isn't available on this system yet: choose WAV in File > Save format")
 }
 
 /// Converts a finished WAV take to MP3 next to it and removes the WAV.
@@ -168,11 +178,11 @@ fn copy_all(from: &Path, to: &Path) -> std::io::Result<()> {
     }
 }
 
-/// `~/...` for display.
+/// `~/...` for display (Windows shows full paths, as people there expect).
 pub fn pretty(p: &Path) -> String {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    let home = home();
     match p.strip_prefix(&home) {
-        Ok(rest) if !home.as_os_str().is_empty() => format!("~/{}", rest.display()),
+        Ok(rest) if !cfg!(windows) && home != Path::new(".") => format!("~/{}", rest.display()),
         _ => p.display().to_string(),
     }
 }
@@ -205,7 +215,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 mod mp3_tests {
     use super::*;
 

@@ -6,11 +6,11 @@ mod deck;
 mod desk;
 mod devices;
 mod devmenu;
+mod dialog;
 mod dsp;
 mod engine;
 mod input;
 mod library;
-#[cfg(target_os = "linux")]
 mod midi;
 mod pics;
 mod recorder;
@@ -474,7 +474,7 @@ struct App {
     /// A long section being pressed the same way.
     pressing: Option<Pressing>,
     open_rx: Option<mpsc::Receiver<Option<PathBuf>>>,
-    save_rx: Option<mpsc::Receiver<Option<(String, String, String)>>>,
+    save_rx: Option<mpsc::Receiver<Option<dialog::SaveAs>>>,
     menu: Option<ProfileMenu>,
     bar: MenuBar,
     quit: bool,
@@ -578,8 +578,7 @@ impl App {
     }
 
     fn settings_path() -> PathBuf {
-        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| ".".into());
-        home.join(".config").join("cut").join("settings.txt")
+        library::config_dir().join("settings.txt")
     }
 
     /// Feel and mixer settings as `key=value` lines (also the profile file format).
@@ -2088,37 +2087,44 @@ impl App {
         }
         let (tx, rx) = mpsc::channel();
         self.save_rx = Some(rx);
+        let samples = self.samples_dir.clone();
+        let suggested = self.auto_section_name();
+        let ext = if self.save_mp3.load(Relaxed) { "mp3" } else { "wav" };
         std::thread::spawn(move || {
-            let out = std::process::Command::new("zenity")
-                .args([
-                    "--forms",
-                    "--title=Save section to library",
-                    "--text=Blank name = automatic. Type a new folder name to create one.",
-                    "--add-entry=Name",
-                    "--add-combo=Folder",
-                    &format!("--combo-values={}", library::FOLDERS),
-                    "--add-entry=...or new folder",
-                    &format!("--separator={FORM_SEP}"),
-                ])
-                .output();
-            let res = out.ok().filter(|o| o.status.success()).map(|o| save_form_fields(&String::from_utf8_lossy(&o.stdout)));
-            let _ = tx.send(res);
+            let _ = tx.send(dialog::save_section(&samples, library::FOLDERS, &suggested, ext));
         });
     }
 
-    fn save_section(&mut self, name: &str, folder: &str, new_folder: &str) {
+    /// The name a section gets when none is typed: the file's name and the section's times.
+    fn auto_section_name(&self) -> String {
         let rate = self.src.rate as f64;
         let (a, b) = self.region;
         let stem = Path::new(&self.src.name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        let name = match library::clean(name) {
-            n if n.is_empty() => library::clean(&format!("{stem} {:.2}-{:.2}s", a as f64 / rate, b as f64 / rate)),
-            n => n,
-        };
-        let folder = [new_folder, folder].iter().map(|f| library::clean(f)).find(|f| !f.is_empty()).unwrap_or_else(|| "Other".into());
-        let dir = self.samples_dir.join(&folder);
-        let _ = std::fs::create_dir_all(&dir);
+        library::clean(&format!("{stem} {:.2}-{:.2}s", a as f64 / rate, b as f64 / rate))
+    }
+
+    /// Saves the section where the save dialog said: a name and folder in the library
+    /// (Linux's form), or a file the person chose (Windows' Save As).
+    fn save_section(&mut self, answer: dialog::SaveAs) {
         let mp3 = self.save_mp3.load(Relaxed);
-        let path = library::unique(&dir, &name, if mp3 { "mp3" } else { "wav" });
+        let ext = if mp3 { "mp3" } else { "wav" };
+        let path = match answer {
+            dialog::SaveAs::Form(name, folder, new_folder) => {
+                let name = match library::clean(&name) {
+                    n if n.is_empty() => self.auto_section_name(),
+                    n => n,
+                };
+                let folder = [new_folder, folder].iter().map(|f| library::clean(f)).find(|f| !f.is_empty()).unwrap_or_else(|| "Other".into());
+                let dir = self.samples_dir.join(&folder);
+                let _ = std::fs::create_dir_all(&dir);
+                library::unique(&dir, &name, ext)
+            }
+            // The dialog already asked before replacing a file; just make sure the ending
+            // matches what's written.
+            dialog::SaveAs::Path(p) => p.with_extension(ext),
+        };
+        let rate = self.src.rate as f64;
+        let (a, b) = self.region;
         let fade = ((0.002 * rate) as usize).min((b - a) / 2).max(1);
         let ramp = |i: usize| (i.min(b - a - 1 - i) as f32 / fade as f32).min(1.0);
         let l: Vec<f32> = (a..b).map(|i| self.src.l[i] * ramp(i - a)).collect();
@@ -2145,17 +2151,7 @@ impl App {
             None => self.samples_dir.clone(),
         };
         std::thread::spawn(move || {
-            let out = std::process::Command::new("zenity")
-                .args([
-                    "--file-selection",
-                    "--title=Load a sample",
-                    &format!("--filename={}/", start.display()),
-                    "--file-filter=Audio | *.wav *.WAV *.mp3 *.flac *.ogg *.aif *.aiff *.m4a",
-                    "--file-filter=All files | *",
-                ])
-                .output();
-            let path = out.ok().filter(|o| o.status.success()).map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
-            let _ = tx.send(path);
+            let _ = tx.send(dialog::open_file("Load a sample", &start, dialog::Files::Audio));
         });
     }
 
@@ -2168,16 +2164,7 @@ impl App {
             None => self.samples_dir.clone(),
         };
         std::thread::spawn(move || {
-            let out = std::process::Command::new("zenity")
-                .args([
-                    "--file-selection",
-                    "--title=Load a backing track",
-                    &format!("--filename={}/", start.display()),
-                    "--file-filter=Audio | *.wav *.WAV *.mp3 *.flac *.ogg *.aif *.aiff *.m4a",
-                    "--file-filter=All files | *",
-                ])
-                .output();
-            let path = out.ok().filter(|o| o.status.success()).map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
+            let path = dialog::open_file("Load a backing track", &start, dialog::Files::Audio);
             let _ = tx.send(path.map(|p| {
                 let src = deck::load(&p).map(|s| (beat::Analysis::of(&s), s)).map(|(a, s)| (s, a)).map_err(|e| format!("{e:#}"));
                 (p, src)
@@ -2207,7 +2194,7 @@ impl App {
             self.say(format!("{name} removed - {key} chooses another"));
             return;
         }
-        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| ".".into());
+        let home = library::home();
         let other = if which == Pic::Background { &self.label_path } else { &self.bg_path };
         let start = match other.as_deref().and_then(Path::parent) {
             Some(d) => d.to_path_buf(),
@@ -2215,17 +2202,7 @@ impl App {
         };
         let tx = self.pic_tx.clone();
         std::thread::spawn(move || {
-            let out = std::process::Command::new("zenity")
-                .args([
-                    "--file-selection",
-                    &format!("--title=Choose a {name}"),
-                    &format!("--filename={}/", start.display()),
-                    "--file-filter=Images | *.png *.PNG *.jpg *.JPG *.jpeg *.JPEG *.webp *.WEBP",
-                    "--file-filter=All files | *",
-                ])
-                .output();
-            let path = out.ok().filter(|o| o.status.success()).map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()));
-            if let Some(p) = path {
+            if let Some(p) = dialog::open_file(&format!("Choose a {name}"), &start, dialog::Files::Images) {
                 let pic = pics::load(&p);
                 let _ = tx.send((which, p, pic));
             }
@@ -3209,8 +3186,8 @@ impl ApplicationHandler<InEvent> for App {
         if let Some(rx) = &self.save_rx {
             if let Ok(res) = rx.try_recv() {
                 self.save_rx = None;
-                if let Some((name, folder, new_folder)) = res {
-                    self.save_section(&name, &folder, &new_folder);
+                if let Some(answer) = res {
+                    self.save_section(answer);
                 }
             }
         }
@@ -3302,9 +3279,21 @@ fn open_audio(rec: Arc<Record>) -> anyhow::Result<Audio> {
             engine.trace_to(trace_tx);
             let config = cpal::StreamConfig { channels: channels as u16, sample_rate: cpal::SampleRate(out_rate), buffer_size: cpal::BufferSize::Default };
             let errors = std::sync::atomic::AtomicU32::new(0);
+            // Once the sound has settled, say how much delay the system adds: the buffer
+            // CUT fills each time, and how far ahead of the speakers it's filled.
+            let mut calls = 0u32;
             let stream = device.build_output_stream(
                 &config,
-                move |data: &mut [f32], _| engine.process(data, channels),
+                move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
+                    engine.process(data, channels);
+                    calls += 1;
+                    if calls == 500 {
+                        let frames = data.len() / channels.max(1);
+                        let ts = info.timestamp();
+                        let ahead = ts.playback.duration_since(&ts.callback).map_or(String::from("unknown"), |d| format!("{:.1} ms", d.as_secs_f64() * 1e3));
+                        eprintln!("audio latency: {frames}-frame buffer ({:.1} ms), filled {ahead} before it plays", frames as f64 / out_rate as f64 * 1e3);
+                    }
+                },
                 move |e| {
                     if errors.fetch_add(1, Relaxed) < 3 {
                         eprintln!("audio error: {e}");
@@ -3456,17 +3445,6 @@ fn kind_name(k: Kind) -> &'static str {
     }
 }
 
-/// Between the save form's fields in zenity's answer: a character nobody types into a
-/// name (zenity's own default, `|`, can be part of one).
-const FORM_SEP: char = '\u{1f}';
-
-/// The save form's answer: (name, folder, new folder).
-fn save_form_fields(out: &str) -> (String, String, String) {
-    let out = out.strip_suffix('\n').unwrap_or(out);
-    let mut it = out.split(FORM_SEP).map(String::from);
-    (it.next().unwrap_or_default(), it.next().unwrap_or_default(), it.next().unwrap_or_default())
-}
-
 fn wrap_angle(a: f64) -> f64 {
     use std::f64::consts::{PI, TAU};
     if a > PI {
@@ -3537,7 +3515,6 @@ fn main() -> anyhow::Result<()> {
     let (wayland, x11) = (false, false);
     let in_status = Arc::new(input::Status::default());
     let (found, denied) = input::start(el.create_proxy(), in_status.clone());
-    #[cfg(target_os = "linux")]
     midi::start(el.create_proxy());
 
     let src_len = src.len();
@@ -3702,17 +3679,4 @@ fn main() -> anyhow::Result<()> {
     drop(app);
     res?;
     Ok(())
-}
-
-#[cfg(test)]
-mod save_form_tests {
-    use super::*;
-
-    #[test]
-    fn a_bar_in_the_name_stays_in_the_name() {
-        let out = format!("scratch | take{FORM_SEP}Cuts{FORM_SEP}\n");
-        assert_eq!(save_form_fields(&out), ("scratch | take".into(), "Cuts".into(), String::new()));
-        let out = format!("{FORM_SEP}{FORM_SEP}My | Folder\n");
-        assert_eq!(save_form_fields(&out), (String::new(), String::new(), "My | Folder".into()));
-    }
 }

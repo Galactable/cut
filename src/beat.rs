@@ -233,8 +233,7 @@ pub mod saved {
     use std::path::{Path, PathBuf};
 
     fn file() -> PathBuf {
-        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| ".".into());
-        home.join(".config").join("cut").join("beats.txt")
+        crate::library::config_dir().join("beats.txt")
     }
 
     fn parse(line: &str) -> Option<(Grid, usize, &str)> {

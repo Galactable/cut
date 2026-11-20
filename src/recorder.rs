@@ -184,7 +184,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "linux")]
     fn next_take_starts_while_the_last_one_converts_to_mp3() {
         let dir = std::env::temp_dir().join(format!("cut-rec-mp3-busy-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
