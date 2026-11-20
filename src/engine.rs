@@ -281,11 +281,16 @@ impl Engine {
                 // 100-200 Hz tablet reports become a smooth motion instead of a staircase.
                 let gap = t.saturating_sub(self.last_t) as f64 * 1e-6;
                 self.last_t = t;
+                let n = ((gap.clamp(0.0005, 0.012) * self.out_rate) as u32).max(1);
+                // The sound system asks for sound in chunks (~10 ms on Windows), and a
+                // mouse can report many times per chunk. Moves that arrive together, before
+                // the last glide has begun, glide over all their gaps, not just the last.
+                let together = self.ramp_n > 0 && self.ramp_i == 0;
                 self.h_from = self.hand_target();
                 self.h_to = self.base + u;
                 self.last_u = u;
                 self.ramp_i = 0;
-                self.ramp_n = ((gap.clamp(0.0005, 0.012) * self.out_rate) as u32).max(1);
+                self.ramp_n = if together { (self.ramp_n + n).min((0.05 * self.out_rate) as u32) } else { n };
             }
             Msg::HandUp => self.hand = false,
             Msg::Fader(open) => self.fader_target = if open { 1.0 } else { 0.0 },
@@ -633,6 +638,43 @@ mod tests {
 
     fn backing() -> Arc<Source> {
         Arc::new(Source { l: vec![0.5; 48000], r: vec![0.5; 48000], rate: 48000, name: "beat".into() })
+    }
+
+    /// Windows asks for sound in ~10 ms chunks while a mouse reports every 1 ms, so each
+    /// chunk starts with a pile of moves. A steady drag must still turn the record
+    /// steadily, not jump at the start of each chunk and stop for the rest of it.
+    #[test]
+    fn many_moves_per_chunk_still_move_the_record_evenly() {
+        let (mut eng, mut tx, _take, _shared) = setup();
+        let (trace_tx, mut trace_rx) = rtrb::RingBuffer::new(4096);
+        eng.trace_to(trace_tx);
+        let _ = tx.push(Msg::Smooth(200.0));
+        let _ = tx.push(Msg::HandDown { t: 0 });
+        let rate = eng.rec.rate;
+        let mut out = vec![0.0f32; 480 * 2];
+        let mut t = 0u64;
+        for _ in 0..30 {
+            for _ in 0..10 {
+                t += 1000;
+                // Half speed: half a millisecond of the sample per millisecond.
+                let _ = tx.push(Msg::HandMove { t, u: t as f64 * 1e-6 * rate * 0.5 });
+            }
+            eng.process(&mut out, 2);
+        }
+        let mut pos = Vec::new();
+        while let Ok(p) = trace_rx.pop() {
+            pos.push(p.pos as f64);
+        }
+        // Each trace step is 2.5 ms, so the record should move 1.25 ms of the sample.
+        // Skip the first 50 ms while it gets going; a looped record may wrap.
+        let len = eng.rec.hi - eng.rec.lo;
+        for w in pos[20..].windows(2) {
+            let mut d = w[1] - w[0];
+            if d < -0.1 {
+                d += len / rate;
+            }
+            assert!((d - 0.00125).abs() < 0.0004, "step {:.3} ms, want 1.25", d * 1e3);
+        }
     }
 
     #[test]
